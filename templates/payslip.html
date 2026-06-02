@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salary Slip - {{ employee.emp_name }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+            color: #1e293b;
+            padding: 20px 0;
+        }
+
+        /* Layout: sidebar + payslip side by side */
+        .payslip-layout {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            align-items: flex-start;
+        }
+
+        /* Sidebar */
+        .field-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            padding: 16px;
+            position: sticky;
+            top: 20px;
+        }
+        .field-sidebar h6 {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .field-sidebar .form-check {
+            margin-bottom: 6px;
+        }
+        .field-sidebar .form-check-label {
+            font-size: 0.8rem;
+            color: #334155;
+            cursor: pointer;
+        }
+        .field-sidebar .section-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin: 10px 0 4px 0;
+        }
+
+        /* Payslip sheet */
+        .payslip-outer-container {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .payslip-sheet {
+            background-color: #ffffff;
+            border: 3px double #1e293b;
+            padding: 30px 30px 65px 30px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        .w-100-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .w-100-table td, .w-100-table th {
+            border: 1px solid #1e293b;
+            padding: 10px 12px;
+            vertical-align: middle;
+        }
+
+        /* Header */
+        .header-logo-box {
+            background-color: #2b4c6f;
+            width: 25%;
+            height: 90px;
+            padding: 10px;
+        }
+        .company-logo-svg {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 4px;
+        }
+        .logo-icon-row {
+            display: flex;
+            gap: 5px;
+        }
+        .logo-diamond {
+            width: 14px;
+            height: 14px;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            transform: rotate(45deg);
+            border-radius: 2px;
+        }
+        .logo-diamond.accent { background: linear-gradient(135deg, #f59e0b, #f97316); }
+        .company-name-logo {
+            color: #ffffff;
+            font-size: 0.6rem;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.6px;
+            line-height: 1.3;
+            margin-top: 4px;
+        }
+        .company-tagline {
+            color: rgba(255,255,255,0.55);
+            font-size: 0.48rem;
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+
+        .header-title-box {
+            width: 50%;
+            text-align: center;
+        }
+        .header-title-box h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: 2px;
+            color: #0f172a;
+        }
+        .header-title-box p {
+            margin: 5px 0 0 0;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: #475569;
+        }
+
+        .header-confidential-box {
+            width: 25%;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+            color: #0f172a;
+            background-color: #e2e8f0;
+            background-image: radial-gradient(#64748b 15%, transparent 15%);
+            background-size: 8px 8px;
+        }
+
+        /* Info section */
+        .info-label {
+            font-weight: 500;
+            color: #475569;
+            width: 120px;
+            display: inline-block;
+        }
+        .info-separator {
+            width: 20px;
+            display: inline-block;
+            text-align: center;
+            color: #475569;
+        }
+        .info-value {
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        /* Salary table */
+        .salary-table th {
+            background-color: #1e3a5f;
+            color: #ffffff;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+            text-align: center;
+            border: 1px solid #1e293b;
+        }
+        .salary-table td {
+            border: 1px solid #1e293b;
+            font-size: 0.95rem;
+        }
+        .salary-table .align-right {
+            text-align: right;
+            font-family: monospace;
+            font-weight: 500;
+            font-size: 1rem;
+        }
+        .total-row {
+            font-weight: 700;
+            background-color: #f8fafc;
+        }
+        .total-row td {
+            border-top: 2px solid #1e293b !important;
+            border-bottom: 2px solid #1e293b !important;
+        }
+
+        /* Net Pay */
+        .net-pay-header {
+            background-color: #1e3a5f;
+            color: #ffffff;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            padding: 8px !important;
+        }
+        .net-pay-amount {
+            font-size: 1.7rem;
+            font-weight: 800;
+            text-align: center;
+            color: #0f172a;
+            padding: 10px 0 !important;
+        }
+        .net-pay-words {
+            font-size: 0.85rem;
+            font-style: italic;
+            text-align: center;
+            color: #475569;
+            padding: 5px 10px 10px 10px !important;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        /* Stamp */
+        .signature-icon-container {
+            position: absolute;
+            bottom: 12px;
+            right: 30px;
+            opacity: 0.9;
+        }
+        .stamp-container {
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #1e3a5f;
+            border: 1.5px dashed #1e3a5f;
+            padding: 4px 8px;
+            display: inline-block;
+            transform: rotate(-3deg);
+        }
+
+        /* Hidden row */
+        tr.payslip-hidden { display: none !important; }
+
+        /* Print */
+        @media print {
+            body { background-color: #ffffff; padding: 0; }
+            .no-print { display: none !important; }
+            .field-sidebar { display: none !important; }
+            .payslip-layout { display: block; max-width: 100%; }
+            .payslip-sheet { box-shadow: none; border: 3px double #000000; padding: 20px; }
+            .w-100-table td, .w-100-table th { border: 1px solid #000000; }
+            .salary-table th, .net-pay-header { background-color: #1e3a5f !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .header-logo-box { background-color: #2b4c6f !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .header-confidential-box { background-color: #e2e8f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Toolbar -->
+    <div class="payslip-layout no-print" style="margin-bottom: 16px; align-items: center;">
+        <div style="width: 240px; flex-shrink: 0;"></div>
+        <div class="payslip-outer-container">
+            <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded shadow-sm border">
+                <a href="/" class="btn btn-outline-secondary d-flex align-items-center gap-1">
+                    <i class="bi bi-arrow-left"></i> Back to Directory
+                </a>
+                <span class="text-muted small fw-medium">
+                    <i class="bi bi-sliders me-1 text-primary"></i>Use the sidebar to toggle payslip fields
+                </span>
+                <button onclick="window.print();" class="btn btn-primary d-flex align-items-center gap-2">
+                    <i class="bi bi-printer-fill"></i> Print / Save as PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="payslip-layout">
+
+        <!-- ===== FIELD TOGGLE SIDEBAR ===== -->
+        <div class="field-sidebar no-print">
+            <h6><i class="bi bi-sliders me-1"></i>Toggle Fields</h6>
+            <p style="font-size:0.7rem; color:#94a3b8; margin-bottom:10px;">Check/uncheck to show or hide sections on the payslip.</p>
+
+            <div class="section-label">Employee Info</div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-name" checked onchange="toggleRow('row-name', this)">
+                <label class="form-check-label" for="toggle-name">Name</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-empid" checked onchange="toggleRow('row-empid', this)">
+                <label class="form-check-label" for="toggle-empid">Employee ID</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-title" checked onchange="toggleRow('row-title', this)">
+                <label class="form-check-label" for="toggle-title">Designation (Title)</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-directorate" checked onchange="toggleRow('row-directorate', this)">
+                <label class="form-check-label" for="toggle-directorate">Directorate</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-department" checked onchange="toggleRow('row-department', this)">
+                <label class="form-check-label" for="toggle-department">Department</label>
+            </div>
+
+            <div class="section-label">Earnings</div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-basic" checked onchange="toggleRow('row-basic', this)">
+                <label class="form-check-label" for="toggle-basic">Basic Salary</label>
+            </div>
+            {% for atype, aamount in allowances_data %}
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-{{ atype }}" checked onchange="toggleRow('row-{{ atype }}', this)">
+                <label class="form-check-label" for="toggle-{{ atype }}">{{ allowance_labels.get(atype, atype.replace('_', ' ').title()) }}</label>
+            </div>
+            {% endfor %}
+
+            <div class="section-label">Deductions</div>
+            {% for ttype, tamount in taxes_data %}
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-{{ ttype }}" checked onchange="toggleRow('row-{{ ttype }}', this)">
+                <label class="form-check-label" for="toggle-{{ ttype }}">{{ tax_labels.get(ttype, ttype.replace('_', ' ').title()) }}</label>
+            </div>
+            {% endfor %}
+
+            <div class="section-label">Bank & Payment</div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-paydate" checked onchange="toggleRow('row-paydate', this)">
+                <label class="form-check-label" for="toggle-paydate">Payment Date</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-bank" checked onchange="toggleRow('row-bank', this)">
+                <label class="form-check-label" for="toggle-bank">Bank Name</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-accname" checked onchange="toggleRow('row-accname', this)">
+                <label class="form-check-label" for="toggle-accname">Account Name</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="toggle-accnum" checked onchange="toggleRow('row-accnum', this)">
+                <label class="form-check-label" for="toggle-accnum">Account Number</label>
+            </div>
+
+            <hr style="margin: 14px 0 10px 0;">
+            <button class="btn btn-sm btn-outline-secondary w-100 mb-1" onclick="toggleAll(true)">
+                <i class="bi bi-check2-all me-1"></i>Show All
+            </button>
+            <button class="btn btn-sm btn-outline-danger w-100" onclick="toggleAll(false)">
+                <i class="bi bi-x-circle me-1"></i>Hide All
+            </button>
+        </div>
+
+        <!-- ===== PAYSLIP SHEET ===== -->
+        <div class="payslip-outer-container">
+            <div class="payslip-sheet">
+
+                <!-- Header -->
+                <table class="w-100-table" style="margin-bottom: 0;">
+                    <tr>
+                        <td class="header-logo-box align-middle">
+                            <div class="company-logo-svg">
+                                <div class="logo-icon-row">
+                                    <div class="logo-diamond"></div>
+                                    <div class="logo-diamond accent"></div>
+                                    <div class="logo-diamond"></div>
+                                </div>
+                                <div class="company-name-logo">{{ company_name }}</div>
+                                <div class="company-tagline">People · Payroll · Performance</div>
+                            </div>
+                        </td>
+                        <td class="header-title-box">
+                            <h2>SALARY SLIP</h2>
+                            <p>{{ salary_month }}</p>
+                        </td>
+                        <td class="header-confidential-box">
+                            CONFIDENTIAL
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- Employee Info -->
+                <table class="w-100-table" style="border-top: none; margin-bottom: 0;">
+                    <tr id="row-name">
+                        <td colspan="2" style="border-top: none; width:50%;">
+                            <span class="info-label">Name</span>
+                            <span class="info-separator">:</span>
+                            <span class="info-value">{{ employee.emp_name }}</span>
+                        </td>
+                        <td id="row-title" style="border-top: none; width:50%;">
+                            <span class="info-label">Title</span>
+                            <span class="info-separator">:</span>
+                            <span class="info-value">{{ employee.title }}</span>
+                        </td>
+                    </tr>
+                    <tr id="row-empid">
+                        <td colspan="2" style="width:50%;">
+                            <span class="info-label">Employee ID</span>
+                            <span class="info-separator">:</span>
+                            <span class="info-value">{{ employee.emp_id }}</span>
+                        </td>
+                        <td id="row-directorate" style="width:50%;">
+                            <span class="info-label">Directorate</span>
+                            <span class="info-separator">:</span>
+                            <span class="info-value">{{ employee.directorate }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="width:50%;"></td>
+                        <td id="row-department" style="width:50%;">
+                            <span class="info-label">Department</span>
+                            <span class="info-separator">:</span>
+                            <span class="info-value">{{ employee.department }}</span>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- Salary Table -->
+                <table class="w-100-table salary-table" style="border-top: none; margin-bottom: 0;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50%;">Description</th>
+                            <th style="width: 25%;">Earnings</th>
+                            <th style="width: 25%;">Deductions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Basic Salary -->
+                        <tr id="row-basic">
+                            <td>Basic Salary</td>
+                            <td class="align-right">₹{{ "{:,.2f}".format(basic) }}</td>
+                            <td></td>
+                        </tr>
+
+                        <!-- Dynamic Allowances -->
+                        {% for atype, aamount in allowances_data %}
+                        <tr id="row-{{ atype }}">
+                            <td>{{ allowance_labels.get(atype, atype.replace('_', ' ').title()) }}</td>
+                            <td class="align-right">₹{{ "{:,.2f}".format(aamount) }}</td>
+                            <td></td>
+                        </tr>
+                        {% endfor %}
+
+                        <!-- Dynamic Taxes/Deductions -->
+                        {% for ttype, tamount in taxes_data %}
+                        <tr id="row-{{ ttype }}">
+                            <td>{{ tax_labels.get(ttype, ttype.replace('_', ' ').title()) }}</td>
+                            <td></td>
+                            <td class="align-right">₹{{ "{:,.2f}".format(tamount) }}</td>
+                        </tr>
+                        {% endfor %}
+
+                        <!-- Totals -->
+                        <tr class="total-row">
+                            <td>Total</td>
+                            <td class="align-right">₹{{ "{:,.2f}".format(gross_salary) }}</td>
+                            <td class="align-right">₹{{ "{:,.2f}".format(total_deductions) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- Footer: Bank + Net Pay -->
+                <table class="w-100-table" style="border-top: none; margin-bottom: 0;">
+                    <tr>
+                        <td style="width: 50%; border-top: none;">
+                            <div id="row-paydate" style="margin-bottom: 8px;">
+                                <span class="info-label">Payment Date</span>
+                                <span class="info-separator">:</span>
+                                <span class="info-value">{{ payment_date }}</span>
+                            </div>
+                            <div id="row-bank" style="margin-bottom: 8px;">
+                                <span class="info-label">Bank Name</span>
+                                <span class="info-separator">:</span>
+                                <span class="info-value">{{ bank.bank_name if bank else employee.get('bank_name', '—') }}</span>
+                            </div>
+                            <div id="row-accname" style="margin-bottom: 8px;">
+                                <span class="info-label">Account Name</span>
+                                <span class="info-separator">:</span>
+                                <span class="info-value">{{ employee.emp_name }}</span>
+                            </div>
+                            <div id="row-accnum">
+                                <span class="info-label">Bank Account #</span>
+                                <span class="info-separator">:</span>
+                                <span class="info-value">{{ bank.bank_account_num if bank else employee.get('bank_account_num', '—') }}</span>
+                            </div>
+                        </td>
+                        <td style="width: 50%; padding: 0; border-top: none;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td class="net-pay-header">NET PAY</td></tr>
+                                <tr><td class="net-pay-amount">₹{{ "{:,.2f}".format(net_salary) }}</td></tr>
+                                <tr><td class="net-pay-words">{{ net_salary_words }}</td></tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- Stamp -->
+                <div class="signature-icon-container">
+                    <div class="stamp-container">
+                        <i class="bi bi-patch-check-fill"></i> DIGITALLY SIGNED
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+function toggleRow(rowId, checkbox) {
+    const el = document.getElementById(rowId);
+    if (!el) return;
+    if (checkbox.checked) {
+        el.classList.remove('payslip-hidden');
+    } else {
+        el.classList.add('payslip-hidden');
+    }
+}
+
+function toggleAll(show) {
+    const checkboxes = document.querySelectorAll('.field-sidebar input[type=checkbox]');
+    checkboxes.forEach(cb => {
+        cb.checked = show;
+        const rowId = cb.id.replace('toggle-', 'row-');
+        toggleRow(rowId, cb);
+    });
+}
+</script>
+
+</body>
+</html>

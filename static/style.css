@@ -1,0 +1,162 @@
+/* Custom Premium Stylesheet for Employee Data Management System */
+
+:root {
+    --primary-color: #4f46e5;       /* Modern Indigo */
+    --primary-hover: #4338ca;
+    --dark-color: #0f172a;          /* Slate Dark */
+    --light-bg: #f8fafc;            /* Soft slate white */
+    --border-color: #e2e8f0;
+    --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    --hover-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--light-bg);
+    color: #334155;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+h1, h2, h3, h4, h5, h6, .navbar-brand {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Navbar Customizations */
+.navbar {
+    background-color: var(--dark-color) !important;
+    padding: 0.85rem 1rem;
+    border-bottom: 3px solid var(--primary-color);
+}
+
+.navbar-brand {
+    font-size: 1.25rem;
+    letter-spacing: -0.025em;
+}
+
+.fs-7 {
+    font-size: 0.8rem;
+}
+
+.fs-8 {
+    font-size: 0.7rem;
+}
+
+.tracking-wider {
+    letter-spacing: 0.075em;
+}
+
+/* Card custom styles and glow effect */
+.card {
+    border-radius: 12px;
+    box-shadow: var(--card-shadow);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: #ffffff;
+    border: 1px solid var(--border-color);
+}
+
+.card-glow:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--hover-shadow);
+    border-color: #cbd5e1;
+}
+
+.card-header {
+    border-radius: 12px 12px 0 0 !important;
+}
+
+.bg-primary {
+    background-color: var(--primary-color) !important;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    transition: all 0.2s ease-in-out;
+}
+
+.btn-primary:hover, .btn-primary:focus {
+    background-color: var(--primary-hover);
+    border-color: var(--primary-hover);
+    transform: scale(1.01);
+}
+
+.btn-dark {
+    background-color: var(--dark-color);
+    border-color: var(--dark-color);
+    transition: all 0.2s ease-in-out;
+}
+
+.btn-dark:hover, .btn-dark:focus {
+    background-color: #1e293b;
+    border-color: #1e293b;
+    transform: scale(1.01);
+}
+
+/* Input Fields Styles */
+.form-control:focus {
+    border-color: #a5b4fc;
+    box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.4);
+}
+
+.form-control {
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.95rem;
+}
+
+.input-group-text {
+    border-radius: 8px;
+}
+
+/* Table Customizations */
+.table-responsive {
+    border-radius: 10px;
+    box-shadow: var(--card-shadow);
+    overflow-x: auto;
+}
+
+.table th {
+    font-weight: 600;
+    font-size: 0.88rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    background-color: var(--dark-color) !important;
+}
+
+.table td {
+    padding: 1rem 0.75rem;
+    font-size: 0.95rem;
+}
+
+.table tbody tr {
+    transition: background-color 0.15s ease-in-out;
+}
+
+.table tbody tr:hover {
+    background-color: #f1f5f9 !important;
+}
+
+.badge {
+    font-weight: 500;
+}
+
+.font-monospace {
+    font-family: 'SFMono-Regular', Consolas, "Liberation Mono", Menlo, monospace !important;
+}
+
+/* Delete button hover transition */
+.btn-outline-danger {
+    transition: all 0.2s ease;
+}
+.btn-outline-danger:hover {
+    transform: scale(1.1);
+}
+
+/* Footer layout */
+.footer {
+    margin-top: auto;
+    background-color: #ffffff !important;
+    border-top: 1px solid var(--border-color);
+}
