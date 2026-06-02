@@ -158,17 +158,18 @@ def init_db():
             """)
             
             # Database Self-Healing Migration: Add columns if they do not exist
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'age'")
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE employees ADD COLUMN age INT DEFAULT 30")
-                
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'gender'")
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE employees ADD COLUMN gender VARCHAR(20) DEFAULT 'Male'")
-                
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'education'")
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE employees ADD COLUMN education VARCHAR(100) DEFAULT 'B.Tech'")
+            for col_name, col_def in [
+                ("age", "INT DEFAULT 30"),
+                ("gender", "VARCHAR(20) DEFAULT 'Male'"),
+                ("education", "VARCHAR(100) DEFAULT 'B.Tech'")
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE employees ADD COLUMN {col_name} {col_def}")
+                except pymysql.err.OperationalError as e:
+                    if e.args[0] == 1060:
+                        pass
+                    else:
+                        raise
 
             # Self-healing logic for expanded employee details
             cols_to_add = [
@@ -190,9 +191,13 @@ def init_db():
                 ("leave_or_not", "INT DEFAULT 0")
             ]
             for col_name, col_def in cols_to_add:
-                cursor.execute(f"SHOW COLUMNS FROM employees LIKE '{col_name}'")
-                if not cursor.fetchone():
+                try:
                     cursor.execute(f"ALTER TABLE employees ADD COLUMN {col_name} {col_def}")
+                except pymysql.err.OperationalError as e:
+                    if e.args[0] == 1060:
+                        pass
+                    else:
+                        raise
 
             # --- Normalized satellite tables ---
 
@@ -317,9 +322,13 @@ def init_db():
                 'retirement_insurance', 'tax'
             ]
             for col in flat_cols_to_drop:
-                cursor.execute(f"SHOW COLUMNS FROM employees LIKE '{col}'")
-                if cursor.fetchone():
+                try:
                     cursor.execute(f"ALTER TABLE employees DROP COLUMN {col}")
+                except pymysql.err.OperationalError as e:
+                    if e.args[0] in (1091, 1060):
+                        pass
+                    else:
+                        raise
 
             # One-time data correction: Randomize ages for existing records that default to 30
             cursor.execute("SELECT id FROM employees WHERE age = 30")
