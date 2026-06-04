@@ -372,22 +372,22 @@
                                                 {% endif %}
                                             </a>
                                         </th>
-                                        <th scope="col" class="py-3 resizable-th">Email Address</th>
-                                        <th scope="col" class="py-3 resizable-th text-center">Age</th>
-                                        <th scope="col" class="py-3 resizable-th">Gender</th>
-                                        <th scope="col" class="py-3 resizable-th">Education</th>
-                                        <th scope="col" class="py-3 resizable-th">Salary Slab</th>
-                                        <th scope="col" class="py-3 resizable-th">Title (Designation)</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Email Address</th>
+                                        <th scope="col" class="py-3 resizable-th text-center text-white">Age</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Gender</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Education</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Salary Slab</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Title (Designation)</th>
                 
-                                        <th scope="col" class="py-3 resizable-th">Department</th>
-                                        <th scope="col" class="py-3 resizable-th">Bank Name</th>
-                                        <th scope="col" class="py-3 resizable-th">Bank Account #</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Department</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Bank Name</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Bank Account #</th>
                                         
-                                        <th scope="col" class="py-3 resizable-th">Posting Location</th>
-                                        <th scope="col" class="py-3 resizable-th text-center">Payment Tier</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Posting Location</th>
+                                        <th scope="col" class="py-3 resizable-th text-center text-white">Payment Tier</th>
                                         
                                 
-                                        <th scope="col" class="py-3 resizable-th text-center">Leave or Not</th>
+                                        <th scope="col" class="py-3 resizable-th text-center text-white">Leave or Not</th>
                                         <th scope="col" class="py-3 resizable-th">
                                             <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_asc' if sort == 'date_desc' else 'date_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
                                                 Joining Date
@@ -400,21 +400,21 @@
                                                 {% endif %}
                                             </a>
                                         </th>
-                                        <th scope="col" class="py-3 text-end pe-3">Action</th>
+                                        <th scope="col" class="py-3 text-end pe-3 text-white">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% if employees %}
                                         {% for emp in employees %}
                                             <tr>
-                                                <td class="fw-semibold text-secondary ps-3"><code>{{ emp.emp_id }}</code></td>
+                                                <td class="fw-bold text-dark ps-3"><code>{{ emp.emp_id }}</code></td>
                                                 <td class="fw-bold text-dark">
                                                     <a href="{{ url_for('employee_profile', id=emp.id) }}" class="text-decoration-none">
                                                         {{ emp.emp_name }}
                                                     </a>
                                                 </td>
                                                 <td>
-                                                    <a href="mailto:{{ emp.email }}" class="text-decoration-none d-flex align-items-center gap-1 text-secondary">
+                                                    <a href="mailto:{{ emp.email }}" class="text-decoration-none d-flex align-items-center gap-1 text-dark fw-medium">
                                                         <i class="bi bi-envelope fs-7"></i>
                                                         {{ emp.email }}
                                                     </a>
