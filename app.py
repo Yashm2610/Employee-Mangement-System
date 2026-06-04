@@ -1115,7 +1115,7 @@ def send_email(id):
 
     emp_id = employee['emp_id']
     receiver_email = employee['email']
-    sender_email = request.form.get('sender_email', 'admin@maxworth.com').strip()
+    sender_email = request.form.get('sender_email', 'admin@hrsm.com').strip()
     subject = request.form.get('subject', f"Update for {employee['emp_name']}")
     body = request.form.get('body', "Please review your latest documents.")
 
@@ -1195,7 +1195,7 @@ def view_payslip(id):
         domain_name = email_val.split('@')[1].split('.')[0]
         company_name = f"{domain_name.upper()} ENTERPRISE SOLUTIONS"
     else:
-        company_name = "MAXWORTH ENTERPRISE SOLUTIONS"
+        company_name = "HRSM ENTERPRISE SOLUTIONS"
 
     # Human-readable label map
     allowance_labels = {

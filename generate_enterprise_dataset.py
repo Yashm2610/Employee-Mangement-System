@@ -135,9 +135,9 @@ for i in range(1, NUM_EMPLOYEES + 1):
         emp_name = fake.name_female()
         
     # Unique Email
-    email = f"{emp_name.replace(' ', '.').lower()}{random.randint(1,999)}@maxworth.com"
+    email = f"{emp_name.replace(' ', '.').lower()}{random.randint(1,999)}@hrsm.com"
     while email in email_cache:
-        email = f"{emp_name.replace(' ', '.').lower()}{random.randint(1000,9999)}@maxworth.com"
+        email = f"{emp_name.replace(' ', '.').lower()}{random.randint(1000,9999)}@hrsm.com"
     email_cache.add(email)
     
     # Unique Phone
@@ -240,7 +240,7 @@ for i in range(1, NUM_EMPLOYEES + 1):
             resp_hrs = round(random.uniform(0.1, 48.0), 2)
             resp = (sent + timedelta(hours=resp_hrs)).strftime('%Y-%m-%d %H:%M:%S')
             
-        emails.append([emp_id, "admin@maxworth.com", email, subj, etype, sent.strftime('%Y-%m-%d %H:%M:%S'), resp, resp_hrs, status])
+        emails.append([emp_id, "admin@hrsm.com", email, subj, etype, sent.strftime('%Y-%m-%d %H:%M:%S'), resp, resp_hrs, status])
 
 # --------------------------
 # Write Outputs
