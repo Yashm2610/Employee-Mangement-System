@@ -182,41 +182,8 @@
                             </select>
                         </div>
 
-                        <!-- Section: Salary Breakdown -->
-                        <div class="col-12 mt-4"><h6 class="text-primary border-bottom pb-1 mb-2 fw-semibold text-uppercase fs-7 tracking-wider">Salary Details (₹)</h6></div>
-                        <div class="col-md-4 col-12">
-                            <label for="basic_salary" class="form-label fw-medium text-dark">Basic Salary</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="basic_salary" name="basic_salary" placeholder="45000" min="0" value="45000">
                         </div>
-                        
-                        <!-- Dynamic Financial Components -->
-                        <div class="col-md-8 col-12">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label fw-medium text-dark mb-0">Financial Components (Allowances & Deductions)</label>
-                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fs-7" onclick="addComponentRow()"><i class="bi bi-plus-lg"></i> Add Component</button>
-                            </div>
-                            <div id="dynamic-components-container" class="d-flex flex-column gap-2">
-                                <div class="input-group input-group-sm component-row">
-                                    <input type="text" class="form-control border-secondary-subtle w-50" name="component_name[]" placeholder="Name (e.g. Meal)" value="Meal Allowance">
-                                    <select class="form-select border-secondary-subtle" name="component_code[]">
-                                        <option value="1" selected>1 - Allowance</option>
-                                        <option value="2">2 - Deduction</option>
-                                    </select>
-                                    <input type="number" class="form-control border-secondary-subtle w-25" name="component_amount[]" placeholder="Amt" value="300">
-                                    <button type="button" class="btn btn-outline-danger px-2" onclick="this.parentElement.remove()"><i class="bi bi-x"></i></button>
-                                </div>
-                                <div class="input-group input-group-sm component-row">
-                                    <input type="text" class="form-control border-secondary-subtle w-50" name="component_name[]" placeholder="Name (e.g. Pro Tax)" value="Professional Tax">
-                                    <select class="form-select border-secondary-subtle" name="component_code[]">
-                                        <option value="1">1 - Allowance</option>
-                                        <option value="2" selected>2 - Deduction</option>
-                                    </select>
-                                    <input type="number" class="form-control border-secondary-subtle w-25" name="component_amount[]" placeholder="Amt" value="25">
-                                    <button type="button" class="btn btn-outline-danger px-2" onclick="this.parentElement.remove()"><i class="bi bi-x"></i></button>
-                                </div>
-                            </div>
                         </div>
-                    </div>
                     <button type="submit" class="btn btn-dark w-100 py-2 mt-4 d-flex align-items-center justify-content-center">
                         <i class="bi bi-plus-circle me-2"></i>
                         <span>Save Record to Database</span>
@@ -230,8 +197,8 @@
 
 <!-- Dashboard Analytics Charts -->
 {% if chart_data %}
-<div class="row mt-4 mb-2">
-    <div class="col-lg-4 col-md-12 mb-3">
+<div class="row mt-4 mb-2 justify-content-between">
+    <div class="col-lg-5 col-md-12 mb-3">
         <div class="card shadow-sm border-0 h-100 card-glow">
             <div class="card-body">
                 <h6 class="card-title fw-bold text-dark"><i class="bi bi-pie-chart-fill text-primary me-2"></i>Department Distribution</h6>
@@ -241,17 +208,8 @@
             </div>
         </div>
     </div>
-    <div class="col-lg-4 col-md-12 mb-3">
-        <div class="card shadow-sm border-0 h-100 card-glow">
-            <div class="card-body">
-                <h6 class="card-title fw-bold text-dark"><i class="bi bi-gender-ambiguous text-info me-2"></i>Gender Ratio</h6>
-                <div style="position: relative; height:250px; width:100%">
-                    <canvas id="genderChart"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4 col-md-12 mb-3">
+    
+    <div class="col-lg-5 col-md-12 mb-3">
         <div class="card shadow-sm border-0 h-100 card-glow">
             <div class="card-body">
                 <h6 class="card-title fw-bold text-dark"><i class="bi bi-geo-alt-fill text-danger me-2"></i>Location Spread</h6>
@@ -418,15 +376,6 @@
                                         <th scope="col" class="py-3 resizable-th text-center">Age</th>
                                         <th scope="col" class="py-3 resizable-th">Gender</th>
                                         <th scope="col" class="py-3 resizable-th">Education</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Basic (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Meal Allowance (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Transport Allowance (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Medical Allowance (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Allowances Total (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Retirement Ins. (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Professional Tax (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Deductions Total (₹)</th>
-                                        <th scope="col" class="py-3 resizable-th text-end">Net Pay (₹)</th>
                                         <th scope="col" class="py-3 resizable-th">Salary Slab</th>
                                         <th scope="col" class="py-3 resizable-th">Title (Designation)</th>
                 
@@ -480,16 +429,23 @@
                                                         <span class="text-secondary"><i class="bi bi-gender-ambiguous me-1"></i>{{ emp.gender }}</span>
                                                     {% endif %}
                                                 </td>
-                                                <td><span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.education }}</span></td>
-                                                <td class="text-end text-dark font-monospace">₹{{ "{:,.2f}".format(emp.basic_salary) }}</td>
-                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.meal_allowance or 0) }}</td>
-                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.transportation_allowance or 0) }}</td>
-                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.medical_allowance or 0) }}</td>
-                                                <td class="text-end text-success-emphasis font-monospace fw-semibold">₹{{ "{:,.2f}".format(emp.allowances or 0) }}</td>
-                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.retirement_insurance or 0) }}</td>
-                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.tax or 0) }}</td>
-                                                <td class="text-end text-danger-emphasis font-monospace fw-semibold">₹{{ "{:,.2f}".format(emp.deductions or 0) }}</td>
-                                                <td class="text-end text-success fw-bold font-monospace">₹{{ "{:,.2f}".format((emp.basic_salary or 0) + (emp.allowances or 0) - (emp.deductions or 0)) }}</td>
+                                                <td>
+                                                    {% set ed = emp.education|string %}
+                                                    {% if ed == '0' %}
+                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">10th</span>
+                                                    {% elif ed == '1' %}
+                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">12th</span>
+                                                    {% elif ed == '2' %}
+                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">B.Tech</span>
+                                                    {% elif ed == '3' %}
+                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">M.Tech</span>
+                                                    {% elif ed == '4' %}
+                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">PhD</span>
+                                                    {% else %}
+                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.education }}</span>
+                                                    {% endif %}
+                                                </td>
+
                                                 <td>
                                                     {% if emp.payment_tier == 1 %}
                                                         <span class="badge bg-success-subtle text-success border border-success px-2 py-1.5 fs-7">Executive (Tier 1)</span>

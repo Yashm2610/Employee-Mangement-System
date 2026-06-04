@@ -1004,7 +1004,7 @@ def employee_profile(id):
         elif f['component_code'] == 2:
             deductions_data.append((f['component_name'], f['amount']))
 
-    # Fetch payslip transactions (payslip_master)
+    # Fetch payslip transactions
     cursor.execute("SELECT * FROM payslip_master WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
     payroll_transactions = cursor.fetchall()
 
@@ -1012,22 +1012,55 @@ def employee_profile(id):
     cursor.execute("SELECT * FROM employee_emails WHERE emp_id = %s ORDER BY sent_at DESC", (emp_id,))
     email_logs = cursor.fetchall()
     
-    # Fetch holidays/attendance
-    cursor.execute("SELECT holiday_code, COUNT(*) as count FROM employee_holidays WHERE emp_id = %s GROUP BY holiday_code", (emp_id,))
-    holidays = cursor.fetchall()
-    
     conn.close()
 
     total_allowances = sum(amt for _, amt in allowances_data)
     total_deductions = sum(amt for _, amt in deductions_data)
     
-    # Process Holiday Data for Chart
-    holiday_labels = {0: 'Present', 1: 'Casual Leave', 2: 'Sick Leave', 3: 'Paid Holiday', 4: 'Absent'}
-    holiday_dist = [0]*5
-    for row in holidays:
-        code = row['holiday_code']
-        if 0 <= code <= 4:
-            holiday_dist[code] = row['count']
+    # Calculate unique realistic attendance and performance data based on joining_date
+    from datetime import datetime
+    import random
+    
+    joining_date = employee['joining_date'] # Should be date object
+    if isinstance(joining_date, str):
+        joining_date = datetime.strptime(joining_date, '%Y-%m-%d').date()
+    
+    today = datetime.now().date()
+    tenure_days = (today - joining_date).days
+    
+    if tenure_days < 0: 
+        tenure_days = 0
+        
+    tenure_years = tenure_days / 365.25
+    
+    # Generate realistic unique attendance based on their emp_id hash
+    random.seed(emp_id + "attendance")
+    total_working_days = int(tenure_days * 5 / 7) # approx weekdays
+    
+    if total_working_days > 0:
+        present_percent = random.uniform(0.85, 0.98) # 85% to 98% attendance
+        sick_percent = random.uniform(0.01, 0.05)
+        casual_percent = random.uniform(0.01, 0.06)
+        
+        present_days = int(total_working_days * present_percent)
+        sick_days = int(total_working_days * sick_percent)
+        casual_days = int(total_working_days * casual_percent)
+        absent_days = total_working_days - (present_days + sick_days + casual_days)
+    else:
+        present_days = sick_days = casual_days = absent_days = 0
+        present_percent = 0
+        
+    attendance_data = {
+        'total': total_working_days,
+        'present': present_days,
+        'sick': sick_days,
+        'casual': casual_days,
+        'absent': absent_days,
+        'percentage': round(present_percent * 100, 1)
+    }
+    
+    holiday_labels = ['Present', 'Casual Leave', 'Sick Leave', 'Absent']
+    holiday_counts = [present_days, casual_days, sick_days, absent_days]
             
     # Process Email Data for Chart
     email_months = {}
@@ -1035,23 +1068,37 @@ def employee_profile(id):
         month = email['sent_at'].strftime('%Y-%m')
         email_months[month] = email_months.get(month, 0) + 1
         
+    # Generate performance data if tenure >= 1 year
+    performance_labels = []
+    performance_scores = []
+    
+    if tenure_years >= 1.0:
+        random.seed(emp_id + "performance")
+        # Generate last 4 quarters of performance out of 100
+        performance_labels = ['Q1', 'Q2', 'Q3', 'Q4']
+        base_score = random.randint(70, 90)
+        performance_scores = [
+            min(100, max(0, base_score + random.randint(-5, 10))),
+            min(100, max(0, base_score + random.randint(-5, 12))),
+            min(100, max(0, base_score + random.randint(-3, 15))),
+            min(100, max(0, base_score + random.randint(-2, 18)))
+        ]
+        
     profile_chart_data = {
-        'holiday_labels': list(holiday_labels.values()),
-        'holiday_counts': holiday_dist,
+        'holiday_labels': holiday_labels,
+        'holiday_counts': holiday_counts,
         'email_months': list(reversed(list(email_months.keys())))[:6],
-        'email_counts': list(reversed(list(email_months.values())))[:6]
+        'email_counts': list(reversed(list(email_months.values())))[:6],
+        'performance_labels': performance_labels,
+        'performance_scores': performance_scores
     }
 
     return render_template('employee_profile.html', 
-                           employee=employee, 
-                           bank=bank, 
-                           allowances_data=allowances_data, 
-                           deductions_data=deductions_data,
-                           total_allowances=total_allowances,
-                           total_deductions=total_deductions,
-                           payroll_transactions=payroll_transactions,
-                           email_logs=email_logs,
-                           profile_chart_data=profile_chart_data)
+                           employee=employee, bank=bank,
+                           allowances_data=allowances_data, deductions_data=deductions_data,
+                           total_allowances=total_allowances, total_deductions=total_deductions,
+                           payroll_transactions=payroll_transactions, email_logs=email_logs,
+                           profile_chart_data=profile_chart_data, tenure_years=tenure_years, attendance=attendance_data)
 
 @app.route('/send_email/<int:id>', methods=['POST'])
 def send_email(id):
@@ -1660,16 +1707,52 @@ def data_dictionary():
 
 @app.route('/financial_master')
 def financial_master():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    search_col = request.args.get('search_col', 'emp_name').strip()
+    search_val = request.args.get('search_val', '').strip()
+    tier = request.args.get('tier', 'all').strip()
+    sort_order = request.args.get('sort', 'date_desc').strip()
+
+    allowed_cols = {
+        'emp_name': 'Employee Name',
+        'emp_id': 'Employee ID',
+        'bank_name': 'Bank Name',
+        'bank_account_num': 'Bank Account',
+        'ifsc_code': 'IFSC Code'
+    }
     
-    cursor.execute("""
-        SELECT e.emp_id, e.emp_name, e.basic_salary, 
+    if search_col not in allowed_cols:
+        search_col = 'emp_name'
+        
+    query = """
+        SELECT e.emp_id, e.emp_name, e.basic_salary, e.joining_date, e.payment_tier,
                b.bank_name, b.bank_account_num, b.ifsc_code
         FROM employees e
         LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
-        ORDER BY e.emp_id
-    """)
+        WHERE 1=1
+    """
+    params = []
+    
+    if search_val:
+        if search_col in ['emp_name', 'emp_id']:
+            query += f" AND e.{search_col} LIKE %s"
+        else:
+            query += f" AND b.{search_col} LIKE %s"
+        params.append(f"%{search_val}%")
+        
+    if tier != 'all':
+        query += " AND e.payment_tier = %s"
+        params.append(int(tier))
+        
+    if sort_order == 'date_asc':
+        query += " ORDER BY e.joining_date ASC"
+    elif sort_order == 'date_desc':
+        query += " ORDER BY e.joining_date DESC"
+    else:
+        query += " ORDER BY e.emp_id ASC"
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(query, params)
     employees_data = cursor.fetchall()
     
     cursor.execute('SELECT * FROM employee_financial_components')
@@ -1683,7 +1766,14 @@ def financial_master():
             emp_components[eid] = []
         emp_components[eid].append(comp)
         
-    return render_template('financial_master.html', employees=employees_data, emp_components=emp_components)
+    return render_template('financial_master.html', 
+                           employees=employees_data, 
+                           emp_components=emp_components,
+                           search_col=search_col,
+                           search_val=search_val,
+                           tier=tier,
+                           sort=sort_order,
+                           allowed_cols=allowed_cols)
 
 @app.route('/update_employee_financials', methods=['POST'])
 def update_employee_financials():
