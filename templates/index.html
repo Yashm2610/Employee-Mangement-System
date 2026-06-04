@@ -1,67 +1,118 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row g-4">
-    <!-- CSV Upload Component -->
-    <div class="col-lg-6 col-md-12">
+<div class="row justify-content-center">
+    <!-- File Import & Export Component -->
+    <div class="col-lg-8 col-md-12">
         <div class="card shadow-sm border-0 h-100 card-glow">
-            <div class="card-header bg-primary text-white border-0 py-3">
+            <div class="card-header bg-primary text-white border-0 py-3 d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0 d-flex align-items-center">
                     <i class="bi bi-file-earmark-spreadsheet me-2"></i>
-                    Upload Employee CSV
+                    Bulk Import & Export
                 </h5>
-            </div>
-            <div class="card-body p-4 d-flex flex-column justify-content-between">
-                <div>
-                    <p class="text-muted">Upload your CSV data. The system automatically handles standard schemas or maps the <code>Employee.csv</code> dataset by auto-generating names, emails, and IDs.</p>
-                </div>
-                <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data">
-                    <div class="mb-4">
-                        <label for="csv_file" class="form-label fw-medium text-dark">Select CSV File</label>
-                        <div class="input-group">
-                            <input type="file" class="form-control border-secondary-subtle" id="csv_file" name="csv_file" accept=".csv" required>
-                            <label class="input-group-text btn-outline-secondary" for="csv_file"><i class="bi bi-folder2-open"></i></label>
-                        </div>
-                        <div class="form-text">Accepted format: <code>.csv</code> only.</div>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100 py-2 d-flex align-items-center justify-content-center">
-                        <i class="bi bi-cloud-upload me-2 fs-5"></i>
-                        <span>Upload and Process Data</span>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="exportMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-download me-1"></i> Export
                     </button>
-                </form>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="exportMenu">
+                        <li><h6 class="dropdown-header">Employees Data</h6></li>
+                        <li><a class="dropdown-item" href="/export/employees?format=csv"><i class="bi bi-filetype-csv me-2 text-success"></i>CSV Format</a></li>
+                        <li><a class="dropdown-item" href="/export/employees?format=xlsx"><i class="bi bi-file-excel me-2 text-success"></i>Excel (XLSX) Format</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><h6 class="dropdown-header">Payslip History</h6></li>
+                        <li><a class="dropdown-item" href="/export/payslips?format=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Format</a></li>
+                        <li><a class="dropdown-item" href="/export/payslips?format=xlsx"><i class="bi bi-file-excel me-2 text-primary"></i>Excel (XLSX) Format</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card-body p-4 d-flex flex-column">
+                <p class="text-muted small mb-3">Drag and drop a <code>.csv</code>, <code>.xlsx</code>, or <code>.xls</code> file to bulk import employees. Invalid rows will be skipped and reported.</p>
+                
+                <div id="drop-zone" class="border border-2 border-dashed border-primary rounded-3 bg-light text-center p-5 mb-3" style="cursor: pointer; transition: all 0.3s;">
+                    <i class="bi bi-cloud-arrow-up display-4 text-primary mb-2 d-block"></i>
+                    <h6 class="fw-bold text-dark">Drag & Drop file here</h6>
+                    <span class="text-muted small">or click to browse files</span>
+                    <input type="file" id="file-input" class="d-none" accept=".csv, .xlsx, .xls">
+                </div>
+
+                <div class="mb-3 px-3 py-2 bg-light border rounded">
+                    <h6 class="fw-bold fs-7 mb-2 text-dark">Smart Duplicate Handling:</h6>
+                    <div class="d-flex gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="dup_handling" id="dupSkip" value="skip" checked>
+                            <label class="form-check-label small" for="dupSkip">Skip Existing</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="dup_handling" id="dupUpdate" value="update">
+                            <label class="form-check-label small" for="dupUpdate">Update Existing</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="dup_handling" id="dupInsert" value="insert_new">
+                            <label class="form-check-label small" for="dupInsert">Insert New Only</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="upload-progress-container" class="d-none mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span class="fw-semibold text-primary">Uploading & Validating...</span>
+                        <span id="progress-text" class="text-muted">0%</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div id="import-summary" class="alert d-none mb-0 p-3">
+                    <h6 class="alert-heading fw-bold mb-1"><i id="summary-icon" class="bi me-2"></i>Import Summary</h6>
+                    <p id="summary-message" class="small mb-2"></p>
+                    <div class="d-flex gap-2">
+                        <span id="success-badge" class="badge bg-success">0 Success</span>
+                        <span id="error-badge" class="badge bg-danger">0 Failed</span>
+                    </div>
+                    <a id="error-download-btn" href="#" class="btn btn-sm btn-outline-danger mt-2 d-none w-100">
+                        <i class="bi bi-exclamation-triangle me-1"></i> Download Error Report
+                    </a>
+                    <button id="add-employee-btn" class="btn btn-sm btn-dark mt-2 w-100 d-none" data-bs-toggle="modal" data-bs-target="#addEmployeeModal" type="button">
+                        <i class="bi bi-person-plus me-1"></i> Add an Employee Manually
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Manual Entry Component -->
-    <div class="col-lg-6 col-md-12">
-        <div class="card shadow-sm border-0 h-100 card-glow">
-            <div class="card-header bg-dark text-white border-0 py-3">
-                <h5 class="card-title mb-0 d-flex align-items-center">
-                    <i class="bi bi-person-plus me-2"></i>
-                    Add Employee Manually
-                </h5>
-            </div>
-            <div class="card-body p-4">
-                <form action="{{ url_for('add_employee') }}" method="POST">
+    <!-- Add Employee Modal -->
+    <div class="modal fade" id="addEmployeeModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>Add Employee Manually</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body bg-light p-4">
+                    <form action="{{ url_for('add_employee') }}" method="POST" class="bg-white p-4 rounded shadow-sm border">
                     <div class="row g-3">
                         <!-- Section: Personal Info -->
                         <div class="col-12"><h6 class="text-primary border-bottom pb-1 mb-2 fw-semibold text-uppercase fs-7 tracking-wider">Personal Information</h6></div>
-                        <div class="col-md-6 col-12">
+                        <div class="col-md-4 col-12">
                             <label for="emp_id" class="form-label fw-medium text-dark">Employee ID</label>
                             <input type="text" class="form-control border-secondary-subtle" id="emp_id" name="emp_id" placeholder="e.g. EMP-2026-0001" required>
                         </div>
-                        <div class="col-md-6 col-12">
+                        <div class="col-md-4 col-12">
                             <label for="emp_name" class="form-label fw-medium text-dark">Employee Name</label>
                             <input type="text" class="form-control border-secondary-subtle" id="emp_name" name="emp_name" placeholder="Full Name" required>
                         </div>
-                        <div class="col-md-6 col-12">
+                        <div class="col-md-4 col-12">
                             <label for="email" class="form-label fw-medium text-dark">Email Address</label>
                             <input type="email" class="form-control border-secondary-subtle" id="email" name="email" placeholder="name@company.com" required>
                         </div>
-                        <div class="col-md-6 col-12">
-                            <label for="date" class="form-label fw-medium text-dark">Joining Date</label>
-                            <input type="date" class="form-control border-secondary-subtle" id="date" name="date" required>
+                        <div class="col-md-4 col-12">
+                            <label for="date_of_birth" class="form-label fw-medium text-dark">Date of Birth</label>
+                            <input type="date" class="form-control border-secondary-subtle" id="date_of_birth" name="date_of_birth" required>
+                        </div>
+                        <div class="col-md-4 col-12">
+                            <label for="joining_date" class="form-label fw-medium text-dark">Joining Date</label>
+                            <input type="date" class="form-control border-secondary-subtle" id="joining_date" name="joining_date" required>
                         </div>
                         <div class="col-md-4 col-12">
                             <label for="age" class="form-label fw-medium text-dark">Age</label>
@@ -76,20 +127,18 @@
                             </select>
                         </div>
                         <div class="col-md-4 col-12">
-                            <label for="education" class="form-label fw-medium text-dark">Education</label>
-                            <input type="text" class="form-control border-secondary-subtle" id="education" name="education" placeholder="e.g. B.Tech">
+                            <label for="education" class="form-label fw-medium text-dark">Education Code</label>
+                            <select class="form-select border-secondary-subtle" id="education" name="education">
+                                <option value="0">0 (10th)</option>
+                                <option value="1">1 (12th)</option>
+                                <option value="2" selected>2 (B.Tech)</option>
+                                <option value="3">3 (M.Tech)</option>
+                                <option value="4">4 (PhD)</option>
+                            </select>
                         </div>
                         <div class="col-md-4 col-12">
-                            <label for="joining_year" class="form-label fw-medium text-dark">Joining Year</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="joining_year" name="joining_year" placeholder="2026" min="1990" max="2100" value="2026">
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <label for="city" class="form-label fw-medium text-dark">City</label>
-                            <input type="text" class="form-control border-secondary-subtle" id="city" name="city" placeholder="e.g. Bangalore" value="Bangalore">
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <label for="experience_in_current_domain" class="form-label fw-medium text-dark">Experience (Years)</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="experience_in_current_domain" name="experience_in_current_domain" placeholder="2" min="0" max="50" value="2">
+                            <label for="posting_location" class="form-label fw-medium text-dark">Posting Location</label>
+                            <input type="text" class="form-control border-secondary-subtle" id="posting_location" name="posting_location" placeholder="e.g. Bangalore" value="Bangalore">
                         </div>
 
                         <!-- Section: Job & Banking Details -->
@@ -99,20 +148,8 @@
                             <input type="text" class="form-control border-secondary-subtle" id="title" name="title" placeholder="e.g. Software Engineer" value="Software Engineer">
                         </div>
                         <div class="col-md-4 col-12">
-                            <label for="directorate" class="form-label fw-medium text-dark">Directorate</label>
-                            <input type="text" class="form-control border-secondary-subtle" id="directorate" name="directorate" placeholder="e.g. Engineering" value="Engineering">
-                        </div>
-                        <div class="col-md-4 col-12">
                             <label for="department" class="form-label fw-medium text-dark">Department</label>
                             <input type="text" class="form-control border-secondary-subtle" id="department" name="department" placeholder="e.g. IT Department" value="IT Department">
-                        </div>
-                        <div class="col-md-6 col-12">
-                            <label for="bank_name" class="form-label fw-medium text-dark">Bank Name</label>
-                            <input type="text" class="form-control border-secondary-subtle" id="bank_name" name="bank_name" placeholder="e.g. Bank of America" value="Bank of America">
-                        </div>
-                        <div class="col-md-6 col-12">
-                            <label for="bank_account_num" class="form-label fw-medium text-dark">Bank Account #</label>
-                            <input type="text" class="form-control border-secondary-subtle" id="bank_account_num" name="bank_account_num" placeholder="e.g. 1234567890" value="1234567890">
                         </div>
                         <div class="col-md-4 col-12">
                             <label for="payment_tier" class="form-label fw-medium text-dark">Payment Tier</label>
@@ -123,21 +160,25 @@
                             </select>
                         </div>
                         <div class="col-md-4 col-12">
-                            <label for="ever_benched" class="form-label fw-medium text-dark">Ever Benched</label>
-                            <select class="form-select border-secondary-subtle" id="ever_benched" name="ever_benched">
-                                <option value="No" selected>No</option>
-                                <option value="Yes">Yes</option>
-                            </select>
+                            <label for="bank_name" class="form-label fw-medium text-dark">Bank Name</label>
+                            <input type="text" class="form-control border-secondary-subtle" id="bank_name" name="bank_name" placeholder="e.g. Bank of America" value="Bank of America">
                         </div>
                         <div class="col-md-4 col-12">
-                            <label for="leave_or_not" class="form-label fw-medium text-dark">Leave or Not</label>
-                            <select class="form-select border-secondary-subtle" id="leave_or_not" name="leave_or_not">
+                            <label for="bank_account_num" class="form-label fw-medium text-dark">Bank Account #</label>
+                            <input type="text" class="form-control border-secondary-subtle" id="bank_account_num" name="bank_account_num" placeholder="e.g. 1234567890" value="1234567890">
+                        </div>
+                        <div class="col-md-4 col-12">
+                            <label for="ifsc_code" class="form-label fw-medium text-dark">IFSC Code</label>
+                            <input type="text" class="form-control border-secondary-subtle" id="ifsc_code" name="ifsc_code" placeholder="e.g. BOFA0000001" value="BOFA0000001">
+                        </div>
+                        <div class="col-md-4 col-12">
+                            <label for="holiday" class="form-label fw-medium text-dark">Holiday Code</label>
+                            <select class="form-select border-secondary-subtle" id="holiday" name="holiday">
                                 <option value="0" selected>0 (Active)</option>
-                                <option value="1">1 (On Leave)</option>
-                                <option value="2">2 (Medical Leave)</option>
-                                <option value="3">3 (Parental Leave)</option>
+                                <option value="1">1 (Sick Leave)</option>
+                                <option value="2">2 (Casual Leave)</option>
+                                <option value="3">3 (Earned Leave)</option>
                                 <option value="4">4 (Unpaid Leave)</option>
-                                <option value="5">5 (Resigned)</option>
                             </select>
                         </div>
 
@@ -147,39 +188,84 @@
                             <label for="basic_salary" class="form-label fw-medium text-dark">Basic Salary</label>
                             <input type="number" class="form-control border-secondary-subtle" id="basic_salary" name="basic_salary" placeholder="45000" min="0" value="45000">
                         </div>
-                        <div class="col-md-4 col-12">
-                            <label for="meal_allowance" class="form-label fw-medium text-dark">Meal Allowance</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="meal_allowance" name="meal_allowance" placeholder="300" min="0" value="300">
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <label for="transportation_allowance" class="form-label fw-medium text-dark">Transport Allowance</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="transportation_allowance" name="transportation_allowance" placeholder="300" min="0" value="300">
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <label for="medical_allowance" class="form-label fw-medium text-dark">Medical Allowance</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="medical_allowance" name="medical_allowance" placeholder="300" min="0" value="300">
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <label for="retirement_insurance" class="form-label fw-medium text-dark">Retirement Ins.</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="retirement_insurance" name="retirement_insurance" placeholder="25" min="0" value="25">
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <label for="tax" class="form-label fw-medium text-dark">Professional Tax</label>
-                            <input type="number" class="form-control border-secondary-subtle" id="tax" name="tax" placeholder="25" min="0" value="25">
+                        
+                        <!-- Dynamic Financial Components -->
+                        <div class="col-md-8 col-12">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label fw-medium text-dark mb-0">Financial Components (Allowances & Deductions)</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fs-7" onclick="addComponentRow()"><i class="bi bi-plus-lg"></i> Add Component</button>
+                            </div>
+                            <div id="dynamic-components-container" class="d-flex flex-column gap-2">
+                                <div class="input-group input-group-sm component-row">
+                                    <input type="text" class="form-control border-secondary-subtle w-50" name="component_name[]" placeholder="Name (e.g. Meal)" value="Meal Allowance">
+                                    <select class="form-select border-secondary-subtle" name="component_code[]">
+                                        <option value="1" selected>1 - Allowance</option>
+                                        <option value="2">2 - Deduction</option>
+                                    </select>
+                                    <input type="number" class="form-control border-secondary-subtle w-25" name="component_amount[]" placeholder="Amt" value="300">
+                                    <button type="button" class="btn btn-outline-danger px-2" onclick="this.parentElement.remove()"><i class="bi bi-x"></i></button>
+                                </div>
+                                <div class="input-group input-group-sm component-row">
+                                    <input type="text" class="form-control border-secondary-subtle w-50" name="component_name[]" placeholder="Name (e.g. Pro Tax)" value="Professional Tax">
+                                    <select class="form-select border-secondary-subtle" name="component_code[]">
+                                        <option value="1">1 - Allowance</option>
+                                        <option value="2" selected>2 - Deduction</option>
+                                    </select>
+                                    <input type="number" class="form-control border-secondary-subtle w-25" name="component_amount[]" placeholder="Amt" value="25">
+                                    <button type="button" class="btn btn-outline-danger px-2" onclick="this.parentElement.remove()"><i class="bi bi-x"></i></button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-dark w-100 py-2 mt-4 d-flex align-items-center justify-content-center">
                         <i class="bi bi-plus-circle me-2"></i>
                         <span>Save Record to Database</span>
                     </button>
-                </form>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+<!-- End Add Employee Modal -->
+
+<!-- Dashboard Analytics Charts -->
+{% if chart_data %}
+<div class="row mt-4 mb-2">
+    <div class="col-lg-4 col-md-12 mb-3">
+        <div class="card shadow-sm border-0 h-100 card-glow">
+            <div class="card-body">
+                <h6 class="card-title fw-bold text-dark"><i class="bi bi-pie-chart-fill text-primary me-2"></i>Department Distribution</h6>
+                <div style="position: relative; height:250px; width:100%">
+                    <canvas id="deptChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-12 mb-3">
+        <div class="card shadow-sm border-0 h-100 card-glow">
+            <div class="card-body">
+                <h6 class="card-title fw-bold text-dark"><i class="bi bi-gender-ambiguous text-info me-2"></i>Gender Ratio</h6>
+                <div style="position: relative; height:250px; width:100%">
+                    <canvas id="genderChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-12 mb-3">
+        <div class="card shadow-sm border-0 h-100 card-glow">
+            <div class="card-body">
+                <h6 class="card-title fw-bold text-dark"><i class="bi bi-geo-alt-fill text-danger me-2"></i>Location Spread</h6>
+                <div style="position: relative; height:250px; width:100%">
+                    <canvas id="locationChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Employee Database Grid -->
-<div class="row mt-5">
+<div class="row mt-4">
     <div class="col-12">
         <div class="card shadow-sm border-0">
             <div class="card-body p-4">
@@ -191,235 +277,290 @@
                             Employee Directory
                             <span class="badge bg-secondary ms-2 fs-7 fw-normal">{{ employees|length }} Records</span>
                         </h4>
+                        {% if employees %}
+                        <div class="mt-2">
+                            <button id="add-employee-btn-header" class="btn btn-sm btn-dark" data-bs-toggle="modal" data-bs-target="#addEmployeeModal" type="button">
+                                <i class="bi bi-person-plus me-1"></i> Add New Employee
+                            </button>
+                        </div>
+                        {% endif %}
                         <p class="text-muted small mb-0">Browse, filter, and sort all records saved in the MySQL database.</p>
                     </div>
                     
-                    <!-- Dynamic Search & Filter Toolbar -->
-                    <div class="col-lg-8 col-12">
-                        <form action="{{ url_for('index') }}" method="GET" class="row g-2 justify-content-lg-end">
-                            <!-- Retain sort order when searching -->
-                            <input type="hidden" name="sort" value="{{ sort }}">
-                            
-                            <!-- Search Column Dropdown -->
-                            <div class="col-md-3 col-12">
-                                <select class="form-select border-secondary-subtle" name="search_col">
-                                    {% for col_key, col_label in allowed_cols.items() %}
-                                        <option value="{{ col_key }}" {% if search_col == col_key %}selected{% endif %}>{{ col_label }}</option>
-                                    {% endfor %}
-                                </select>
+                            {% if employees or search_val or tier != 'all' %}
+                            <!-- Dynamic Search & Filter Toolbar -->
+                            <div class="col-lg-8 col-12">
+                                <form action="{{ url_for('index') }}" method="GET" class="row g-2 justify-content-lg-end">
+                                    <!-- Retain sort order when searching -->
+                                    <input type="hidden" name="sort" value="{{ sort }}">
+                                    
+                                    <!-- Search Column Dropdown -->
+                                    <div class="col-md-2 col-12">
+                                        <select class="form-select border-secondary-subtle" name="search_col">
+                                            {% for col_key, col_label in allowed_cols.items() %}
+                                                <option value="{{ col_key }}" {% if search_col == col_key %}selected{% endif %}>{{ col_label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Search Value Input -->
+                                    <div class="col-md-3 col-12">
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-white border-end-0 text-muted border-secondary-subtle"><i class="bi bi-search"></i></span>
+                                            <input type="text" class="form-control border-start-0 ps-0 border-secondary-subtle" name="search_val" placeholder="Enter filter value..." value="{{ search_val }}">
+                                            {% if search_val or tier != 'all' or filter_dept or filter_desig or filter_loc or filter_gender %}
+                                                <a href="{{ url_for('index', sort=sort) }}" class="btn btn-outline-secondary d-flex align-items-center" title="Reset Filters">
+                                                    <i class="bi bi-arrow-clockwise"></i>
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Salary Tier Dropdown -->
+                                    <div class="col-md-3 col-12">
+                                        <select class="form-select border-secondary-subtle" name="tier" onchange="this.form.submit()">
+                                            <option value="all" {% if tier == 'all' or not tier %}selected{% endif %}>All Slabs (Tiers)</option>
+                                            <option value="1" {% if tier == '1' %}selected{% endif %}>Executive (Tier 1)</option>
+                                            <option value="2" {% if tier == '2' %}selected{% endif %}>Professional (Tier 2)</option>
+                                            <option value="3" {% if tier == '3' %}selected{% endif %}>Associate (Tier 3)</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Advanced Filters Toggle -->
+                                    <div class="col-md-2 col-12">
+                                        <button class="btn btn-outline-primary w-100" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="{% if filter_dept or filter_desig or filter_loc or filter_gender %}true{% else %}false{% endif %}">
+                                            <i class="bi bi-funnel me-1"></i> Advanced
+                                        </button>
+                                    </div>
+
+                                    <div class="col-md-2 col-12">
+                                        <button type="submit" class="btn btn-primary w-100">Apply</button>
+                                    </div>
+                                    
+                                    <!-- Advanced Filters Collapse -->
+                                    <div class="collapse w-100 mt-2 {% if filter_dept or filter_desig or filter_loc or filter_gender %}show{% endif %}" id="advancedFilters">
+                                        <div class="card card-body bg-light border-secondary-subtle">
+                                            <div class="row g-2">
+                                                <div class="col-md-3">
+                                                    <input type="text" class="form-control form-control-sm" name="filter_dept" placeholder="Department" value="{{ filter_dept }}">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <input type="text" class="form-control form-control-sm" name="filter_desig" placeholder="Designation" value="{{ filter_desig }}">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <input type="text" class="form-control form-control-sm" name="filter_loc" placeholder="Location" value="{{ filter_loc }}">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <select class="form-select form-select-sm" name="filter_gender">
+                                                        <option value="">Any Gender</option>
+                                                        <option value="Male" {% if filter_gender == 'Male' %}selected{% endif %}>Male</option>
+                                                        <option value="Female" {% if filter_gender == 'Female' %}selected{% endif %}>Female</option>
+                                                        <option value="Other" {% if filter_gender == 'Other' %}selected{% endif %}>Other</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
                             </div>
-                            
-                            <!-- Search Value Input -->
-                            <div class="col-md-4 col-12">
-                                <div class="input-group">
-                                    <span class="input-group-text bg-white border-end-0 text-muted border-secondary-subtle"><i class="bi bi-search"></i></span>
-                                    <input type="text" class="form-control border-start-0 ps-0 border-secondary-subtle" name="search_val" placeholder="Enter filter value..." value="{{ search_val }}">
-                                    {% if search_val or tier != 'all' %}
-                                        <a href="{{ url_for('index', sort=sort) }}" class="btn btn-outline-secondary d-flex align-items-center" title="Reset Filters">
-                                            <i class="bi bi-arrow-clockwise"></i>
-                                        </a>
-                                    {% endif %}
+                        </div>
+
+                        <!-- Action Toolbar -->
+                        <div class="d-flex justify-content-between align-items-center mb-3 bg-light p-3 rounded-3 border">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="text-dark fw-medium small">Sort Order:</span>
+                                <div class="btn-group" role="group">
+                                    <!-- Retain tier filter when sorting -->
+                                    <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_desc', tier=tier) }}" class="btn btn-sm btn-outline-secondary {% if sort == 'date_desc' %}active{% endif %}">Date (Newest)</a>
+                                    <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_asc', tier=tier) }}" class="btn btn-sm btn-outline-secondary {% if sort == 'date_asc' %}active{% endif %}">Date (Oldest)</a>
                                 </div>
                             </div>
                             
-                            <!-- Salary Tier Dropdown -->
-                            <div class="col-md-3 col-12">
-                                <select class="form-select border-secondary-subtle" name="tier" onchange="this.form.submit()">
-                                    <option value="all" {% if tier == 'all' or not tier %}selected{% endif %}>All Slabs (Tiers)</option>
-                                    <option value="1" {% if tier == '1' %}selected{% endif %}>Executive (Tier 1)</option>
-                                    <option value="2" {% if tier == '2' %}selected{% endif %}>Professional (Tier 2)</option>
-                                    <option value="3" {% if tier == '3' %}selected{% endif %}>Associate (Tier 3)</option>
-                                </select>
-                            </div>
-                            <div class="col-md-2 col-12">
-                                <button type="submit" class="btn btn-primary w-100">Filter</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Action Toolbar -->
-                <div class="d-flex justify-content-between align-items-center mb-3 bg-light p-3 rounded-3 border">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="text-dark fw-medium small">Sort Order:</span>
-                        <div class="btn-group" role="group">
-                            <!-- Retain tier filter when sorting -->
-                            <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_desc', tier=tier) }}" class="btn btn-sm btn-outline-secondary {% if sort == 'date_desc' %}active{% endif %}">Date (Newest)</a>
-                            <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_asc', tier=tier) }}" class="btn btn-sm btn-outline-secondary {% if sort == 'date_asc' %}active{% endif %}">Date (Oldest)</a>
-                        </div>
-                    </div>
-                    
-                    {% if employees %}
-                        <form action="{{ url_for('clear_records') }}" method="POST" onsubmit="return confirm('WARNING: Are you sure you want to delete ALL employee records from the database? This action cannot be undone.');">
-                            <button type="submit" class="btn btn-sm btn-outline-danger d-flex align-items-center">
-                                <i class="bi bi-trash3-fill me-1"></i> Clear Database
-                            </button>
-                        </form>
-                    {% endif %}
-                </div>
-
-                <!-- Bootstrap Responsive Table -->
-                <div class="table-responsive rounded-3 border">
-                    <table class="table table-hover align-middle mb-0 text-nowrap" id="employeeTable">
-                        <thead class="table-dark">
-                            <tr>
-                                <th scope="col" class="py-3 ps-3 resizable-th">
-                                    <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='id_asc' if sort == 'id_desc' else 'id_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
-                                        Employee ID
-                                        {% if sort == 'id_asc' %}
-                                            <i class="bi bi-arrow-up text-primary"></i>
-                                        {% elif sort == 'id_desc' %}
-                                            <i class="bi bi-arrow-down text-primary"></i>
-                                        {% else %}
-                                            <i class="bi bi-arrow-down-up text-white-50 fs-8"></i>
-                                        {% endif %}
-                                    </a>
-                                </th>
-                                <th scope="col" class="py-3 resizable-th">
-                                    <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='name_asc' if sort == 'name_desc' else 'name_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
-                                        Employee Name
-                                        {% if sort == 'name_asc' %}
-                                            <i class="bi bi-arrow-up text-primary"></i>
-                                        {% elif sort == 'name_desc' %}
-                                            <i class="bi bi-arrow-down text-primary"></i>
-                                        {% else %}
-                                            <i class="bi bi-arrow-down-up text-white-50 fs-8"></i>
-                                        {% endif %}
-                                    </a>
-                                </th>
-                                <th scope="col" class="py-3 resizable-th">Email Address</th>
-                                <th scope="col" class="py-3 resizable-th text-center">Age</th>
-                                <th scope="col" class="py-3 resizable-th">Gender</th>
-                                <th scope="col" class="py-3 resizable-th">Education</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Basic (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Meal Allowance (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Transport Allowance (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Medical Allowance (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Allowances Total (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Retirement Ins. (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Professional Tax (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Deductions Total (₹)</th>
-                                <th scope="col" class="py-3 resizable-th text-end">Net Pay (₹)</th>
-                                <th scope="col" class="py-3 resizable-th">Salary Slab</th>
-                                <th scope="col" class="py-3 resizable-th">Title (Designation)</th>
-                                <th scope="col" class="py-3 resizable-th">Directorate</th>
-                                <th scope="col" class="py-3 resizable-th">Department</th>
-                                <th scope="col" class="py-3 resizable-th">Bank Name</th>
-                                <th scope="col" class="py-3 resizable-th">Bank Account #</th>
-                                <th scope="col" class="py-3 resizable-th text-center">Joining Year</th>
-                                <th scope="col" class="py-3 resizable-th">City</th>
-                                <th scope="col" class="py-3 resizable-th text-center">Payment Tier</th>
-                                <th scope="col" class="py-3 resizable-th text-center">Ever Benched</th>
-                                <th scope="col" class="py-3 resizable-th text-center">Experience (Years)</th>
-                                <th scope="col" class="py-3 resizable-th text-center">Leave or Not</th>
-                                <th scope="col" class="py-3 resizable-th">
-                                    <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_asc' if sort == 'date_desc' else 'date_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
-                                        Joining Date
-                                        {% if sort == 'date_asc' %}
-                                            <i class="bi bi-arrow-up text-primary"></i>
-                                        {% elif sort == 'date_desc' %}
-                                            <i class="bi bi-arrow-down text-primary"></i>
-                                        {% else %}
-                                            <i class="bi bi-arrow-down-up text-white-50 fs-8"></i>
-                                        {% endif %}
-                                    </a>
-                                </th>
-                                <th scope="col" class="py-3 text-end pe-3">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
                             {% if employees %}
-                                {% for emp in employees %}
-                                    <tr>
-                                        <td class="fw-semibold text-secondary ps-3"><code>{{ emp.emp_id }}</code></td>
-                                        <td class="fw-bold text-dark">{{ emp.emp_name }}</td>
-                                        <td>
-                                            <a href="mailto:{{ emp.email }}" class="text-decoration-none d-flex align-items-center gap-1 text-secondary">
-                                                <i class="bi bi-envelope fs-7"></i>
-                                                {{ emp.email }}
-                                            </a>
-                                        </td>
-                                        <td class="text-center font-monospace">{{ emp.age }}</td>
-                                        <td>
-                                            {% if emp.gender == 'Female' %}
-                                                <span class="text-danger-emphasis"><i class="bi bi-gender-female me-1"></i>Female</span>
-                                            {% elif emp.gender == 'Male' %}
-                                                <span class="text-primary-emphasis"><i class="bi bi-gender-male me-1"></i>Male</span>
-                                            {% else %}
-                                                <span class="text-secondary"><i class="bi bi-gender-ambiguous me-1"></i>{{ emp.gender }}</span>
-                                            {% endif %}
-                                        </td>
-                                        <td><span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.education }}</span></td>
-                                        <td class="text-end text-dark font-monospace">₹{{ "{:,.2f}".format(emp.basic_salary) }}</td>
-                                        <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.meal_allowance) }}</td>
-                                        <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.transportation_allowance) }}</td>
-                                        <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.medical_allowance) }}</td>
-                                        <td class="text-end text-success-emphasis font-monospace fw-semibold">₹{{ "{:,.2f}".format(emp.allowances) }}</td>
-                                        <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.retirement_insurance) }}</td>
-                                        <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.tax) }}</td>
-                                        <td class="text-end text-danger-emphasis font-monospace fw-semibold">₹{{ "{:,.2f}".format(emp.deductions) }}</td>
-                                        <td class="text-end text-success fw-bold font-monospace">₹{{ "{:,.2f}".format(emp.basic_salary + emp.allowances - emp.deductions) }}</td>
-                                        <td>
-                                            {% if emp.basic_salary >= 80000 %}
-                                                <span class="badge bg-success-subtle text-success border border-success px-2 py-1.5 fs-7">Executive (Tier 1)</span>
-                                            {% elif emp.basic_salary >= 50000 %}
-                                                <span class="badge bg-info-subtle text-info border border-info px-2 py-1.5 fs-7">Professional (Tier 2)</span>
-                                            {% else %}
-                                                <span class="badge bg-warning-subtle text-warning border border-warning px-2 py-1.5 fs-7">Associate (Tier 3)</span>
-                                            {% endif %}
-                                        </td>
-                                        <td><span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.title }}</span></td>
-                                        <td>{{ emp.directorate }}</td>
-                                        <td>{{ emp.department }}</td>
-                                        <td>{{ emp.bank_name }}</td>
-                                        <td class="font-monospace">{{ emp.bank_account_num }}</td>
-                                        <td class="font-monospace text-center">{{ emp.joining_year }}</td>
-                                        <td>{{ emp.city }}</td>
-                                        <td class="text-center"><span class="badge bg-light text-dark border px-2 py-1 fs-7">Tier {{ emp.payment_tier }}</span></td>
-                                        <td class="text-center">{{ emp.ever_benched }}</td>
-                                        <td class="text-center font-monospace">{{ emp.experience_in_current_domain }}</td>
-                                        <td class="text-center">
-                                            {% if emp.leave_or_not == 0 %}
-                                                <span class="badge bg-success-subtle text-success border border-success px-2 py-0.5 fs-8">Active (0)</span>
-                                            {% elif emp.leave_or_not == 1 %}
-                                                <span class="badge bg-warning-subtle text-warning border border-warning px-2 py-0.5 fs-8">On Leave (1)</span>
-                                            {% elif emp.leave_or_not == 2 %}
-                                                <span class="badge bg-danger-subtle text-danger border border-danger px-2 py-0.5 fs-8">Medical (2)</span>
-                                            {% elif emp.leave_or_not == 3 %}
-                                                <span class="badge bg-info-subtle text-info border border-info px-2 py-0.5 fs-8">Parental (3)</span>
-                                            {% elif emp.leave_or_not == 4 %}
-                                                <span class="badge bg-secondary-subtle text-secondary border border-secondary px-2 py-0.5 fs-8">Unpaid (4)</span>
-                                            {% else %}
-                                                <span class="badge bg-dark-subtle text-dark border border-dark px-2 py-0.5 fs-8">Resigned ({{ emp.leave_or_not }})</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-light text-dark border border-secondary-subtle px-2.5 py-1.5 font-monospace">
-                                                <i class="bi bi-calendar3 me-1 text-primary"></i>
-                                                {{ emp.date }}
-                                            </span>
-                                        </td>
-                                        <td class="text-end pe-3">
-                                            <a href="{{ url_for('view_payslip', id=emp.id) }}" class="btn btn-sm btn-outline-primary rounded-circle p-1.5 me-1" title="Generate Payslip" target="_blank">
-                                                <i class="bi bi-file-earmark-pdf fs-7 d-flex"></i>
-                                            </a>
-                                            <form action="{{ url_for('delete_employee', id=emp.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this record?');">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle p-1.5" title="Delete Record">
-                                                    <i class="bi bi-trash fs-7 d-flex"></i>
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            {% else %}
-                                <tr>
-                                    <td colspan="28" class="text-center py-5 text-muted">
-                                        <i class="bi bi-inbox fs-1 d-block mb-3 text-secondary-subtle"></i>
-                                        <span class="fs-5">No records found.</span>
-                                        <p class="small text-secondary mb-0 mt-1">Upload a CSV dataset or add records manually to populate the directory.</p>
-                                    </td>
-                                </tr>
+                                <form action="{{ url_for('clear_records') }}" method="POST" onsubmit="return confirm('WARNING: Are you sure you want to delete ALL employee records from the database? This action cannot be undone.');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger d-flex align-items-center">
+                                        <i class="bi bi-trash3-fill me-1"></i> Clear Database
+                                    </button>
+                                </form>
                             {% endif %}
+                        </div>
+
+                        <!-- Bootstrap Responsive Table -->
+                        <div class="table-responsive rounded-3 border">
+                            <table class="table table-hover align-middle mb-0 text-nowrap" id="employeeTable">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th scope="col" class="py-3 ps-3 resizable-th">
+                                            <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='id_asc' if sort == 'id_desc' else 'id_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
+                                                Employee ID
+                                                {% if sort == 'id_asc' %}
+                                                    <i class="bi bi-arrow-up text-primary"></i>
+                                                {% elif sort == 'id_desc' %}
+                                                    <i class="bi bi-arrow-down text-primary"></i>
+                                                {% else %}
+                                                    <i class="bi bi-arrow-down-up text-white-50 fs-8"></i>
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th scope="col" class="py-3 resizable-th">
+                                            <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='name_asc' if sort == 'name_desc' else 'name_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
+                                                Employee Name
+                                                {% if sort == 'name_asc' %}
+                                                    <i class="bi bi-arrow-up text-primary"></i>
+                                                {% elif sort == 'name_desc' %}
+                                                    <i class="bi bi-arrow-down text-primary"></i>
+                                                {% else %}
+                                                    <i class="bi bi-arrow-down-up text-white-50 fs-8"></i>
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th scope="col" class="py-3 resizable-th">Email Address</th>
+                                        <th scope="col" class="py-3 resizable-th text-center">Age</th>
+                                        <th scope="col" class="py-3 resizable-th">Gender</th>
+                                        <th scope="col" class="py-3 resizable-th">Education</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Basic (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Meal Allowance (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Transport Allowance (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Medical Allowance (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Allowances Total (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Retirement Ins. (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Professional Tax (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Deductions Total (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th text-end">Net Pay (₹)</th>
+                                        <th scope="col" class="py-3 resizable-th">Salary Slab</th>
+                                        <th scope="col" class="py-3 resizable-th">Title (Designation)</th>
+                
+                                        <th scope="col" class="py-3 resizable-th">Department</th>
+                                        <th scope="col" class="py-3 resizable-th">Bank Name</th>
+                                        <th scope="col" class="py-3 resizable-th">Bank Account #</th>
+                                        
+                                        <th scope="col" class="py-3 resizable-th">Posting Location</th>
+                                        <th scope="col" class="py-3 resizable-th text-center">Payment Tier</th>
+                                        
+                                
+                                        <th scope="col" class="py-3 resizable-th text-center">Leave or Not</th>
+                                        <th scope="col" class="py-3 resizable-th">
+                                            <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_asc' if sort == 'date_desc' else 'date_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
+                                                Joining Date
+                                                {% if sort == 'date_asc' %}
+                                                    <i class="bi bi-arrow-up text-primary"></i>
+                                                {% elif sort == 'date_desc' %}
+                                                    <i class="bi bi-arrow-down text-primary"></i>
+                                                {% else %}
+                                                    <i class="bi bi-arrow-down-up text-white-50 fs-8"></i>
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th scope="col" class="py-3 text-end pe-3">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if employees %}
+                                        {% for emp in employees %}
+                                            <tr>
+                                                <td class="fw-semibold text-secondary ps-3"><code>{{ emp.emp_id }}</code></td>
+                                                <td class="fw-bold text-dark">
+                                                    <a href="{{ url_for('employee_profile', id=emp.id) }}" class="text-decoration-none">
+                                                        {{ emp.emp_name }}
+                                                    </a>
+                                                </td>
+                                                <td>
+                                                    <a href="mailto:{{ emp.email }}" class="text-decoration-none d-flex align-items-center gap-1 text-secondary">
+                                                        <i class="bi bi-envelope fs-7"></i>
+                                                        {{ emp.email }}
+                                                    </a>
+                                                </td>
+                                                <td class="text-center font-monospace">{{ emp.age }}</td>
+                                                <td>
+                                                    {% if emp.gender == 'Female' %}
+                                                        <span class="text-danger-emphasis"><i class="bi bi-gender-female me-1"></i>Female</span>
+                                                    {% elif emp.gender == 'Male' %}
+                                                        <span class="text-primary-emphasis"><i class="bi bi-gender-male me-1"></i>Male</span>
+                                                    {% else %}
+                                                        <span class="text-secondary"><i class="bi bi-gender-ambiguous me-1"></i>{{ emp.gender }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td><span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.education }}</span></td>
+                                                <td class="text-end text-dark font-monospace">₹{{ "{:,.2f}".format(emp.basic_salary) }}</td>
+                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.meal_allowance or 0) }}</td>
+                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.transportation_allowance or 0) }}</td>
+                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.medical_allowance or 0) }}</td>
+                                                <td class="text-end text-success-emphasis font-monospace fw-semibold">₹{{ "{:,.2f}".format(emp.allowances or 0) }}</td>
+                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.retirement_insurance or 0) }}</td>
+                                                <td class="text-end text-muted font-monospace">₹{{ "{:,.2f}".format(emp.tax or 0) }}</td>
+                                                <td class="text-end text-danger-emphasis font-monospace fw-semibold">₹{{ "{:,.2f}".format(emp.deductions or 0) }}</td>
+                                                <td class="text-end text-success fw-bold font-monospace">₹{{ "{:,.2f}".format((emp.basic_salary or 0) + (emp.allowances or 0) - (emp.deductions or 0)) }}</td>
+                                                <td>
+                                                    {% if emp.payment_tier == 1 %}
+                                                        <span class="badge bg-success-subtle text-success border border-success px-2 py-1.5 fs-7">Executive (Tier 1)</span>
+                                                    {% elif emp.payment_tier == 2 %}
+                                                        <span class="badge bg-info-subtle text-info border border-info px-2 py-1.5 fs-7">Professional (Tier 2)</span>
+                                                    {% else %}
+                                                        <span class="badge bg-warning-subtle text-warning border border-warning px-2 py-1.5 fs-7">Associate (Tier 3)</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td><span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.title }}</span></td>
+                                                <td>{{ emp.department }}</td>
+                                                <td>{{ emp.bank_name }}</td>
+                                                <td class="font-monospace">{{ emp.bank_account_num }}</td>
+                                                <td>{{ emp.posting_location }}</td>
+                                                <td class="text-center"><span class="badge bg-light text-dark border px-2 py-1 fs-7">Tier {{ emp.payment_tier }}</span></td>
+                                                <td class="text-center">
+                                                    {% set status_code = emp.get('leave_or_not', 0) %}
+                                                    {% if status_code == 0 %}
+                                                        <span class="badge bg-success-subtle text-success border border-success px-2 py-0.5 fs-8">Active</span>
+                                                    {% elif status_code == 1 %}
+                                                        <span class="badge bg-warning-subtle text-warning border border-warning px-2 py-0.5 fs-8">On Leave</span>
+                                                    {% elif status_code == 2 %}
+                                                        <span class="badge bg-danger-subtle text-danger border border-danger px-2 py-0.5 fs-8">Medical</span>
+                                                    {% elif status_code == 3 %}
+                                                        <span class="badge bg-info-subtle text-info border border-info px-2 py-0.5 fs-8">Parental</span>
+                                                    {% elif status_code == 4 %}
+                                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary px-2 py-0.5 fs-8">Unpaid</span>
+                                                    {% elif status_code == 5 %}
+                                                        <span class="badge bg-dark-subtle text-dark border border-dark px-2 py-0.5 fs-8">Resigned</span>
+                                                    {% else %}
+                                                        <span class="badge bg-dark-subtle text-dark border border-dark px-2 py-0.5 fs-8">Retired</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-light text-dark border border-secondary-subtle px-2.5 py-1.5 font-monospace">
+                                                        <i class="bi bi-calendar3 me-1 text-primary"></i>
+                                                        {{ emp.joining_date }}
+                                                    </span>
+                                                </td>
+                                                <td class="text-end pe-3">
+                                                    <a href="{{ url_for('payslip_builder', selected_emp_id=emp.emp_id) }}" class="btn btn-sm btn-outline-primary rounded-circle p-1.5 me-1" title="Prepare Payroll / Payslip">
+                                                        <i class="bi bi-receipt fs-7 d-flex"></i>
+                                                    </a>
+                                                    <form action="{{ url_for('delete_employee', id=emp.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this record?');">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle p-1.5" title="Delete Record">
+                                                            <i class="bi bi-trash fs-7 d-flex"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="28" class="text-center py-5 text-muted">
+                                                <i class="bi bi-inbox fs-1 d-block mb-3 text-secondary-subtle"></i>
+                                                <span class="fs-5">No records found.</span>
+                                                <p class="small text-secondary mb-0 mt-1">Adjust your filters to see more results.</p>
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        </div>
+                        <div class="text-center py-5 my-3 text-muted border border-dashed rounded-3 bg-light">
+                            <i class="bi bi-inbox fs-1 d-block mb-3 text-secondary-subtle"></i>
+                            <span class="fs-5">No records found in database.</span>
+                            <p class="small text-secondary mb-0 mt-1">Please use the <strong>Bulk Import</strong> feature above to upload the `employees.csv` file, or add a record manually.</p>
+                        </div>
+                        {% endif %}
                         </tbody>
                     </table>
                 </div>
@@ -453,41 +594,211 @@
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const table = document.getElementById('employeeTable');
-    if (!table) return;
-    
-    const headers = table.querySelectorAll('.resizable-th');
-    headers.forEach(header => {
-        // Inject resizer handle
-        const resizer = document.createElement('div');
-        resizer.className = 'col-resizer';
-        header.appendChild(resizer);
-        
-        let startX, startWidth;
-        
-        const onMouseMove = function(e) {
-            const currentWidth = startWidth + (e.clientX - startX);
-            if (currentWidth > 50) { // Set a safe minimum width limit
-                header.style.width = currentWidth + 'px';
+function addComponentRow() {
+    const container = document.getElementById('dynamic-components-container');
+    const row = document.createElement('div');
+    row.className = 'input-group input-group-sm component-row';
+    row.innerHTML = `
+        <input type="text" class="form-control border-secondary-subtle w-50" name="component_name[]" placeholder="Component Name">
+        <select class="form-select border-secondary-subtle" name="component_code[]">
+            <option value="1">1 - Allowance</option>
+            <option value="2">2 - Deduction</option>
+        </select>
+        <input type="number" class="form-control border-secondary-subtle w-25" name="component_amount[]" placeholder="Amt" value="0">
+        <button type="button" class="btn btn-outline-danger px-2" onclick="this.parentElement.remove()"><i class="bi bi-x"></i></button>
+    `;
+    container.appendChild(row);
+}
+</script>
+{% if chart_data %}
+<script id="dashboard-chart-data" type="application/json">
+    {{ chart_data | tojson | safe }}
+</script>
+{% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const progressContainer = document.getElementById('upload-progress-container');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const summaryAlert = document.getElementById('import-summary');
+    const summaryIcon = document.getElementById('summary-icon');
+    const summaryMsg = document.getElementById('summary-message');
+    const successBadge = document.getElementById('success-badge');
+    const errorBadge = document.getElementById('error-badge');
+    const errorBtn = document.getElementById('error-download-btn');
+
+    if (!dropZone || !fileInput) return;
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('bg-primary-subtle');
+        dropZone.classList.remove('bg-light');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-primary-subtle');
+        dropZone.classList.add('bg-light');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-primary-subtle');
+        dropZone.classList.add('bg-light');
+        if (e.dataTransfer.files.length) {
+            handleUpload(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            handleUpload(e.target.files[0]);
+        }
+    });
+
+    function handleUpload(file) {
+        summaryAlert.classList.add('d-none');
+        errorBtn.classList.add('d-none');
+        const btn = document.getElementById('add-employee-btn');
+        if (btn) btn.classList.add('d-none');
+        progressContainer.classList.remove('d-none');
+        progressBar.style.width = '0%';
+        progressText.innerText = '0%';
+
+        const formData = new FormData();
+        formData.append('csv_file', file);
+        const dupHandling = document.querySelector('input[name="dup_handling"]:checked').value;
+        formData.append('duplicate_handling', dupHandling);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload', true);
+
+        xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 50);
+                progressBar.style.width = percent + '%';
+                progressText.innerText = percent + '%';
             }
         };
-        
-        const onMouseUp = function() {
-            resizer.classList.remove('resizing');
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
+
+        xhr.onload = function() {
+            let p = 50;
+            const interval = setInterval(() => {
+                p += 10;
+                progressBar.style.width = p + '%';
+                progressText.innerText = p + '%';
+                if (p >= 100) {
+                    clearInterval(interval);
+                    progressContainer.classList.add('d-none');
+                    showSummary(xhr);
+                }
+            }, 100);
         };
         
-        resizer.addEventListener('mousedown', function(e) {
-            startX = e.clientX;
-            startWidth = header.offsetWidth;
-            resizer.classList.add('resizing');
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-            e.preventDefault();
+        xhr.onerror = function() {
+            progressContainer.classList.add('d-none');
+            alert("An error occurred during the upload.");
+        };
+
+        xhr.send(formData);
+    }
+
+    function showSummary(xhr) {
+        summaryAlert.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+        summaryIcon.className = 'bi me-2';
+        
+        try {
+            const res = JSON.parse(xhr.responseText);
+            if (xhr.status === 200 && res.success) {
+                successBadge.innerText = res.success_count + ' Success';
+                errorBadge.innerText = res.error_count + ' Failed';
+                
+                if (res.error_count > 0) {
+                    summaryAlert.classList.add('alert-warning');
+                    summaryIcon.classList.add('bi-exclamation-triangle-fill');
+                    summaryMsg.innerText = 'Import completed with some errors. Download the report to see skipped rows.';
+                    errorBtn.href = res.error_file;
+                    errorBtn.classList.remove('d-none');
+                } else {
+                    summaryAlert.classList.add('alert-success');
+                    summaryIcon.classList.add('bi-check-circle-fill');
+                    summaryMsg.innerText = 'All records imported successfully! You can now add individual employees if needed.';
+                }
+                
+                // Reload the page after 2 seconds if successful so data updates in the table
+                setTimeout(() => window.location.reload(), 2000);
+                
+            } else {
+                summaryAlert.classList.add('alert-danger');
+                summaryIcon.classList.add('bi-x-circle-fill');
+                summaryMsg.innerText = res.error || 'Server error occurred.';
+                successBadge.innerText = '0 Success';
+                errorBadge.innerText = '0 Failed';
+            }
+        } catch(e) {
+            summaryAlert.classList.add('alert-danger');
+            summaryIcon.classList.add('bi-x-circle-fill');
+            summaryMsg.innerText = 'Invalid response from server.';
+        }
+    }
+    // Analytics Charts Initialization
+    const rawChartData = document.getElementById('dashboard-chart-data');
+    if (rawChartData) {
+        const chart_data = JSON.parse(rawChartData.textContent);
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } }
+        };
+        
+        // 1. Department Chart (Pie)
+        new Chart(document.getElementById('deptChart'), {
+            type: 'pie',
+            data: {
+                labels: chart_data.departments,
+                datasets: [{
+                    data: chart_data.dept_counts,
+                    backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', '#858796', '#5a5c69']
+                }]
+            },
+            options: chartOptions
         });
-    });
+        
+        // 2. Gender Ratio (Doughnut)
+        new Chart(document.getElementById('genderChart'), {
+            type: 'doughnut',
+            data: {
+                labels: chart_data.genders,
+                datasets: [{
+                    data: chart_data.gender_counts,
+                    backgroundColor: ['#4e73df', '#e83e8c', '#858796']
+                }]
+            },
+            options: chartOptions
+        });
+        
+        // 3. Location Spread (Bar)
+        new Chart(document.getElementById('locationChart'), {
+            type: 'bar',
+            data: {
+                labels: chart_data.locations,
+                datasets: [{
+                    label: 'Employees',
+                    data: chart_data.location_counts,
+                    backgroundColor: '#36b9cc'
+                }]
+            },
+            options: {
+                ...chartOptions,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
 });
 </script>
 {% endblock %}

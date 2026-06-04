@@ -1,6 +1,5 @@
 -- ============================================================
 -- Normalized SQL Schema for Employee Data Management System
--- 4-Table Design: employees + satellite tables
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS employee_db;
@@ -14,22 +13,16 @@ CREATE TABLE IF NOT EXISTS employees (
     emp_id                      VARCHAR(50)     NOT NULL UNIQUE,
     emp_name                    VARCHAR(100)    NOT NULL,
     email                       VARCHAR(100)    NOT NULL,
-    date                        DATE            NOT NULL COMMENT 'Date of joining',
-    basic_salary                DECIMAL(10,2)   DEFAULT 45000.00,
-    allowances                  DECIMAL(10,2)   DEFAULT 0.00 COMMENT 'Calculated total from employee_allowances',
-    deductions                  DECIMAL(10,2)   DEFAULT 0.00 COMMENT 'Calculated total from employee_taxes',
-    age                         INT             DEFAULT 30,
+    date_of_birth               DATE            NOT NULL,
+    joining_date                DATE            NOT NULL,
+    basic_salary                DECIMAL(10,2)   NOT NULL,
+    age                         INT             NOT NULL,
     gender                      VARCHAR(20)     DEFAULT 'Male',
-    education                   VARCHAR(100)    DEFAULT 'B.Tech',
+    education                   INT             DEFAULT 2 COMMENT '0=High School, 1=Diploma, 2=Bachelor''s, 3=Master''s, 4=PhD',
     title                       VARCHAR(100)    DEFAULT 'Software Engineer',
-    directorate                 VARCHAR(100)    DEFAULT 'Engineering',
     department                  VARCHAR(100)    DEFAULT 'General Affairs',
-    joining_year                INT             DEFAULT 2026,
-    city                        VARCHAR(100)    DEFAULT 'Bangalore',
-    payment_tier                INT             DEFAULT 3 COMMENT '1=Executive, 2=Professional, 3=Associate',
-    ever_benched                VARCHAR(10)     DEFAULT 'No',
-    experience_in_current_domain INT            DEFAULT 2,
-    leave_or_not                INT             DEFAULT 0 COMMENT '0=Active,1=Leave,2=Medical,3=Parental,4=Unpaid,5=Resigned'
+    posting_location            VARCHAR(100)    DEFAULT 'Bangalore',
+    payment_tier                INT             NOT NULL COMMENT '1=Executive, 2=Professional, 3=Associate'
 );
 
 -- ============================================================
@@ -40,31 +33,63 @@ CREATE TABLE IF NOT EXISTS employee_bank_details (
     emp_id              VARCHAR(50)     NOT NULL UNIQUE,
     bank_name           VARCHAR(100)    DEFAULT 'Bank of America',
     bank_account_num    VARCHAR(50)     DEFAULT '0000000000',
+    ifsc_code           VARCHAR(20)     DEFAULT 'BOFA0000001',
     FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
 );
 
 -- ============================================================
--- TABLE 3: employee_allowances (many-to-1 with employees)
--- Each row = one type of allowance for one employee.
--- This allows different employees to have different allowance types
--- (e.g., meal_allowance, wife_allowance, housing_allowance, etc.)
+-- TABLE 3: employee_financial_components (many-to-1 with employees)
+-- Unified table for both allowances and deductions.
 -- ============================================================
-CREATE TABLE IF NOT EXISTS employee_allowances (
+CREATE TABLE IF NOT EXISTS employee_financial_components (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     emp_id          VARCHAR(50)     NOT NULL,
-    allowance_type  VARCHAR(100)    NOT NULL COMMENT 'e.g. meal_allowance, transportation_allowance, wife_allowance',
-    amount          DECIMAL(10,2)   DEFAULT 0.00,
+    component_name  VARCHAR(100)    NOT NULL,
+    component_code  TINYINT         NOT NULL COMMENT '1 for Allowance, 2 for Deduction',
+    amount          DECIMAL(12,2)   DEFAULT 0.00,
     FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
 );
 
 -- ============================================================
--- TABLE 4: employee_taxes (many-to-1 with employees)
--- Each row = one type of tax/deduction for one employee.
+-- TABLE 4: payslip_master (History of Payslips)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS employee_taxes (
+CREATE TABLE IF NOT EXISTS payslip_master (
+    payslip_id           INT AUTO_INCREMENT PRIMARY KEY,
+    payslip_no           VARCHAR(20) UNIQUE,
+    emp_id               VARCHAR(50) NOT NULL,
+    salary_month         VARCHAR(20),
+    salary_year          INT,
+    basic_salary         DECIMAL(12,2) DEFAULT 0.00,
+    total_allowance      DECIMAL(12,2) DEFAULT 0.00,
+    total_deduction      DECIMAL(12,2) DEFAULT 0.00,
+    final_in_hand_salary DECIMAL(12,2) DEFAULT 0.00,
+    generated_on         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
+);
+
+-- ============================================================
+-- TABLE 5: employee_holidays
+-- ============================================================
+CREATE TABLE IF NOT EXISTS employee_holidays (
     id          INT AUTO_INCREMENT PRIMARY KEY,
-    emp_id      VARCHAR(50)     NOT NULL,
-    tax_type    VARCHAR(100)    NOT NULL COMMENT 'e.g. retirement_insurance, professional_tax, income_tax',
-    amount      DECIMAL(10,2)   DEFAULT 0.00,
+    emp_id      VARCHAR(50) NOT NULL,
+    holiday_code TINYINT NOT NULL COMMENT 'Codes: 0=Present, 1=Casual Leave, 2=Sick Leave, 3=Paid Holiday, 4=Absent',
+    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
+);
+
+-- ============================================================
+-- TABLE 6: employee_emails (Communication Log)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS employee_emails (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    emp_id VARCHAR(50) NOT NULL,
+    sender_email VARCHAR(100) DEFAULT 'admin@maxworth.com',
+    receiver_email VARCHAR(100),
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    subject VARCHAR(255),
+    body TEXT,
+    response_received_at DATETIME,
+    response_notes TEXT,
+    status VARCHAR(20) DEFAULT 'Sent',
     FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
 );

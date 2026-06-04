@@ -16,6 +16,9 @@
     <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <!-- Custom Style Sheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -39,9 +42,16 @@
                             <i class="bi bi-house-door-fill me-1"></i> Home
                         </a>
                     </li>
+
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/data-dictionary' %}active{% endif %}" href="{{ url_for('data_dictionary_page') }}">
-                            <i class="bi bi-book-fill me-1"></i> Data Dictionary
+                        <a class="nav-link {% if request.path == '/payslip_builder' %}active{% endif %}" href="{{ url_for('payslip_builder') }}">
+                            <i class="bi bi-receipt me-1"></i> Payslip Builder
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/financial_master' %}active{% endif %}" href="{{ url_for('financial_master') }}">
+                            <i class="bi bi-cash-coin me-1"></i> Financial Master
                         </a>
                     </li>
                     <li class="nav-item dropdown">

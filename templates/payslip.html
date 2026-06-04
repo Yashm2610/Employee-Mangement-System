@@ -522,6 +522,7 @@
         </div>
     </div>
 
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 <script>
 function toggleRow(rowId, checkbox) {
     const el = document.getElementById(rowId);
@@ -541,6 +542,29 @@ function toggleAll(show) {
         toggleRow(rowId, cb);
     });
 }
+
+// Initialize drag and drop for sidebar items
+document.addEventListener('DOMContentLoaded', function() {
+    // Add drag handles to all form-checks
+    document.querySelectorAll('.field-sidebar .form-check').forEach(el => {
+        el.style.cursor = 'grab';
+        el.setAttribute('title', 'Drag to reorder');
+        const handle = document.createElement('i');
+        handle.className = 'bi bi-grip-vertical text-muted me-1';
+        el.insertBefore(handle, el.firstChild);
+    });
+
+    // Make the sidebar sortable
+    const sidebar = document.querySelector('.field-sidebar');
+    new Sortable(sidebar, {
+        animation: 150,
+        ghostClass: 'bg-light',
+        handle: '.form-check', // make the whole item draggable
+        onEnd: function (evt) {
+            console.log('Dragged item', evt.item);
+        },
+    });
+});
 </script>
 
 </body>

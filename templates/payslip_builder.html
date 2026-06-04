@@ -1,0 +1,412 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+<style>
+    #payslip-canvas * { box-sizing: border-box; }
+    
+    .editable-input {
+        border: 1px dashed transparent; background: transparent;
+        width: 100%; text-align: right; padding: 2px 4px;
+        transition: 0.2s; font-family: inherit; font-size: inherit; color: inherit;
+    }
+    .editable-input:focus, .editable-input:hover {
+        border-color: #ccc; background: #fff; color: #000; outline: none;
+    }
+    .editable-text-left { text-align: left; }
+    
+    /* THEME 1: Classic Green */
+    .theme-1 {
+        background: #fff; border: 1px solid #ddd; max-width: 800px;
+        margin: 0 auto; font-family: 'Arial', sans-serif;
+    }
+    .theme-1 .ps-header { display: flex; border-bottom: 2px solid #5a7b45; background: #5a7b45; }
+    .theme-1 .ps-header-left { width: 30%; background: #5a7b45; }
+    .theme-1 .ps-header-center { width: 40%; background: #fff; text-align: center; padding: 15px; }
+    .theme-1 .ps-header-right { width: 30%; background: #e3ebd8; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem; border-left: 1px solid #5a7b45; }
+    .theme-1 .ps-title { font-size: 1.8rem; font-weight: bold; letter-spacing: 2px; margin-bottom: 5px; }
+    .theme-1 .ps-month { font-size: 0.9rem; border-top: 1px solid #ccc; padding-top: 5px; }
+    
+    .theme-1 .ps-info { display: flex; padding: 15px; font-size: 0.9rem; }
+    .theme-1 .ps-info-col { width: 50%; min-height: 50px; }
+    .theme-1 .ps-info-row { display: flex; margin-bottom: 5px; cursor: grab; padding: 2px; border: 1px dashed transparent; }
+    .theme-1 .ps-info-row:hover { border-color: #ccc; background: #f9f9f9; }
+    .theme-1 .ps-info-label { width: 120px; }
+    .theme-1 .ps-info-val { flex: 1; font-weight: bold; }
+    
+    .theme-1 .ps-table-header { display: flex; background: #5a7b45; color: white; font-weight: bold; text-align: center; }
+    .theme-1 .ps-th-desc { width: 50%; padding: 5px; border-right: 1px solid #fff; }
+    .theme-1 .ps-th-earn { width: 25%; padding: 5px; border-right: 1px solid #fff; }
+    .theme-1 .ps-th-ded { width: 25%; padding: 5px; }
+    
+    .theme-1 .ps-table-body { min-height: 200px; display: flex; flex-direction: column; }
+    .theme-1 .ps-item-row { display: flex; margin-bottom: 8px; }
+    .theme-1 .ps-item-name { width: 50%; text-align: left; padding: 4px 10px; border-right: 1px solid #ccc; }
+    .theme-1 .ps-item-earn { width: 25%; padding: 4px 10px; border-right: 1px solid #ccc; }
+    .theme-1 .ps-item-ded { width: 25%; padding: 4px 10px; }
+    
+    .theme-1 .ps-total-row { display: flex; border-top: 1px solid #ccc; border-bottom: 2px solid #5a7b45; padding: 10px; font-weight: bold; }
+    .theme-1 .ps-total-desc { width: 50%; padding-left: 10px; }
+    .theme-1 .ps-total-earn { width: 25%; text-align: right; padding-right: 10px; border-right: 1px solid #ccc; }
+    .theme-1 .ps-total-ded { width: 25%; text-align: right; padding-right: 10px; }
+    
+    .theme-1 .ps-footer { display: flex; background: #e3ebd8; border-bottom: 1px solid #ccc; }
+    .theme-1 .ps-footer-left { width: 50%; padding: 10px; background: #fff; }
+    .theme-1 .ps-footer-right { width: 50%; }
+    .theme-1 .ps-net-pay-bar { background: #5a7b45; color: white; text-align: center; padding: 5px; font-weight: bold; }
+    .theme-1 .ps-net-amount { text-align: center; font-size: 1.2rem; font-weight: bold; padding: 10px; }
+    .theme-1 .ps-logo-img { display: none; }
+
+    /* THEME 2: Corporate Blue */
+    .theme-2 { background: #fff; border: 1px solid #ccc; max-width: 800px; margin: 0 auto; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; }
+    .theme-2 .ps-header { display: flex; justify-content: space-between; margin-bottom: 30px; }
+    .theme-2 .ps-header-left { width: 60%; }
+    .theme-2 .ps-header-right { width: 40%; text-align: right; }
+    .theme-2 .ps-header-center { display: none; }
+    
+    .theme-2 .ps-comp-name { color: #43719f; font-size: 1.8rem; font-weight: bold; margin-bottom: 5px; }
+    .theme-2 .ps-title { color: #43719f; font-size: 2rem; font-weight: bold; letter-spacing: 1px; }
+    .theme-2 .ps-month { display: block; margin-top: 10px; color: #666; font-size: 1.1rem; }
+    
+    .theme-2 .ps-info { display: flex; justify-content: space-between; margin-bottom: 30px; }
+    .theme-2 .ps-info-col { width: 48%; min-height: 50px; }
+    .theme-2 .ps-info-hdr { background: #87a7c7; color: white; padding: 4px 8px; font-weight: bold; font-size: 0.8rem; margin-bottom: 10px; }
+    .theme-2 .ps-info-row { display: flex; margin-bottom: 4px; font-size: 0.85rem; border-bottom: 1px solid #eee; padding-bottom: 2px; cursor: grab; }
+    .theme-2 .ps-info-label { width: 120px; color: #555; }
+    .theme-2 .ps-info-val { flex: 1; font-weight: bold; }
+    
+    .theme-2 .ps-table-header { display: none; }
+    .theme-2 .ps-section-hdr { background: #cfd9e1; font-weight: bold; font-size: 0.85rem; padding: 4px 8px; margin-top: 20px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+    .theme-2 .ps-item-row { display: flex; font-size: 0.85rem; padding: 4px 8px; border-bottom: 1px solid #eee; }
+    .theme-2 .ps-item-name { width: 70%; }
+    .theme-2 .ps-item-earn, .theme-2 .ps-item-ded { width: 30%; text-align: right; }
+    
+    .theme-2 .ps-total-row { display: flex; justify-content: space-between; background: #cfd9e1; padding: 6px 8px; font-weight: bold; margin-top: 5px; }
+    .theme-2 .ps-total-desc { width: 70%; }
+    .theme-2 .ps-total-earn, .theme-2 .ps-total-ded { width: 30%; text-align: right; }
+    
+    .theme-2 .ps-footer { margin-top: 30px; display: block; }
+    .theme-2 .ps-footer-left { display: none; }
+    .theme-2 .ps-footer-right { width: 100%; }
+    .theme-2 .ps-net-pay-bar { display: none; }
+    .theme-2 .ps-net-amount { background: #e2e8ed; padding: 10px 20px; font-size: 1.2rem; font-weight: bold; display: flex; justify-content: space-between; margin-top: 10px; }
+    .theme-2 .ps-logo-img { display: none; }
+
+    /* THEME 3: Modern Grey (StarWell) */
+    .theme-3 { background: #fff; border: 1px solid #e0e0e0; max-width: 800px; margin: 0 auto; font-family: 'Inter', sans-serif; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+    .theme-3 .ps-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+    .theme-3 .ps-title { font-size: 2.5rem; letter-spacing: 5px; color: #333; font-weight: 300; }
+    .theme-3 .ps-logo-img { display: block; max-height: 80px; }
+    .theme-3 .ps-header-center { display: none; }
+    
+    .theme-3 .ps-info { display: flex; justify-content: space-between; margin-bottom: 30px; }
+    .theme-3 .ps-info-col { width: 48%; min-height: 50px; }
+    .theme-3 .ps-info-hdr { background: #777; color: white; padding: 5px 10px; font-size: 0.8rem; letter-spacing: 1px; margin-bottom: 15px; }
+    .theme-3 .ps-info-row { display: flex; margin-bottom: 8px; font-size: 0.9rem; cursor: grab; border: 1px dashed transparent; }
+    .theme-3 .ps-info-row:hover { border-color: #ccc; }
+    .theme-3 .ps-info-label { width: 100px; color: #666; }
+    .theme-3 .ps-info-val { font-weight: 600; color: #333; }
+    
+    .theme-3 .ps-table-header { display: none; }
+    .theme-3 .ps-section-hdr { background: #666; color: white; font-size: 0.85rem; padding: 6px 10px; margin-top: 25px; margin-bottom: 10px; display: flex; justify-content: space-between; letter-spacing: 1px; }
+    .theme-3 .ps-item-row { display: flex; font-size: 0.9rem; padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
+    .theme-3 .ps-item-name { width: 70%; color: #444; }
+    .theme-3 .ps-item-earn, .theme-3 .ps-item-ded { width: 30%; text-align: right; font-weight: 500; }
+    
+    .theme-3 .ps-total-row { display: flex; justify-content: space-between; background: #f0f0f0; padding: 10px; font-weight: bold; color: #333; margin-top: 5px; }
+    .theme-3 .ps-total-desc { width: 70%; }
+    .theme-3 .ps-total-earn, .theme-3 .ps-total-ded { width: 30%; text-align: right; }
+    
+    .theme-3 .ps-footer { margin-top: 40px; }
+    .theme-3 .ps-footer-left { display: none; }
+    .theme-3 .ps-footer-right { width: 100%; display: flex; justify-content: flex-end; }
+    .theme-3 .ps-net-pay-bar { display: none; }
+    .theme-3 .ps-net-amount { background: #333; color: white; padding: 15px 30px; font-size: 1.4rem; font-weight: 300; display: flex; justify-content: space-between; width: 300px; border-radius: 4px; }
+    
+    @media print {
+        body * { visibility: hidden; }
+        #payslip-canvas, #payslip-canvas * { visibility: visible; }
+        #payslip-canvas { position: absolute; left: 0; top: 0; width: 100%; }
+        .editable-input { border: none !important; }
+        .t-hide-print { display: none !important; }
+    }
+</style>
+
+<div class="row mb-4 align-items-center bg-white p-3 shadow-sm rounded border">
+    <div class="col-md-4">
+        <label class="form-label fw-bold text-secondary mb-1 fs-7">Select Employee</label>
+        <select class="form-select border-secondary-subtle" id="emp_selector">
+            <option value="">-- Choose Employee --</option>
+            {% for emp in employees %}
+            <option value="{{ emp.emp_id }}" {% if selected_emp_id == emp.emp_id %}selected{% endif %}>{{ emp.emp_id }} - {{ emp.emp_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label fw-bold text-secondary mb-1 fs-7">Select Layout Theme</label>
+        <select class="form-select border-secondary-subtle" id="theme_selector">
+            <option value="theme-1">Theme 1: Classic Green</option>
+            <option value="theme-2">Theme 2: Corporate Blue</option>
+            <option value="theme-3">Theme 3: Modern Grey</option>
+        </select>
+    </div>
+    <div class="col-md-4 text-end mt-3 mt-md-0">
+        <button class="btn btn-outline-primary me-2" onclick="window.print()"><i class="bi bi-printer me-1"></i> Print</button>
+        <button class="btn btn-primary" onclick="savePayslip()"><i class="bi bi-save me-1"></i> Save Payslip</button>
+    </div>
+</div>
+
+<div class="alert alert-info py-2 fs-7">
+    <i class="bi bi-info-circle-fill me-2"></i> Employee details are fetched automatically. <strong>You can drag and drop</strong> the info rows (Name, Phone, IFSC, etc.) to rearrange them. Numerical values are directly editable.
+</div>
+
+<form id="payslip-form" method="POST" action="{{ url_for('payslip_builder') }}">
+    <input type="hidden" name="emp_id" id="form_emp_id">
+    
+    <div id="payslip-canvas" class="theme-1 shadow">
+        
+        <div class="ps-header">
+            <div class="ps-header-left">
+                <img src="{{ url_for('static', filename='logo.png') }}" class="ps-logo-img" alt="Company Logo">
+                <div class="ps-comp-name t-hide-1 t-hide-3">Maxworth Inc.</div>
+                <div class="ps-month t-hide-1 t-hide-3" id="t-month-2">January 2024</div>
+            </div>
+            <div class="ps-header-center">
+                <div class="ps-title">SALARY SLIP</div>
+                <div class="ps-month"><input type="text" class="editable-input editable-text-left" value="January 2024" id="t-month-1"></div>
+            </div>
+            <div class="ps-header-right">
+                <div class="ps-title t-hide-1">PAYSLIP</div>
+                <span class="t-hide-2 t-hide-3">CONFIDENTIAL</span>
+            </div>
+        </div>
+        
+        <div class="ps-info">
+            <!-- Col 1 (Sortable) -->
+            <div class="ps-info-col" id="sortable-col-1">
+                <div class="ps-info-hdr t-hide-1">EMPLOYEE INFORMATION</div>
+                <div class="ps-info-row"><div class="ps-info-label">Name</div><div class="ps-info-val" id="lbl-name">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">Employee ID</div><div class="ps-info-val" id="lbl-empid">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">Phone</div><div class="ps-info-val" id="lbl-phone">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">Email</div><div class="ps-info-val" id="lbl-email">-</div></div>
+            </div>
+            <!-- Col 2 (Sortable) -->
+            <div class="ps-info-col" id="sortable-col-2">
+                <div class="ps-info-hdr t-hide-1 t-hide-3">PAYMENT DETAILS</div>
+                <div class="ps-info-hdr t-hide-1 t-hide-2" style="display:none;">JOB DETAILS</div>
+                <div class="ps-info-row"><div class="ps-info-label">Title</div><div class="ps-info-val" id="lbl-title">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">Department</div><div class="ps-info-val" id="lbl-dept">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">Bank Name</div><div class="ps-info-val" id="lbl-bank">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">A/C Number</div><div class="ps-info-val" id="lbl-acct">-</div></div>
+                <div class="ps-info-row"><div class="ps-info-label">IFSC Code</div><div class="ps-info-val" id="lbl-ifsc">-</div></div>
+            </div>
+        </div>
+        
+        <div class="ps-table-header">
+            <div class="ps-th-desc">Description</div>
+            <div class="ps-th-earn">Earnings</div>
+            <div class="ps-th-ded">Deductions</div>
+        </div>
+        
+        <div class="ps-table-body">
+            
+            <!-- EARNINGS SECTION -->
+            <div class="ps-section-hdr t-hide-1">
+                <span>EARNINGS</span><span>AMOUNT</span>
+            </div>
+            
+            <div class="ps-item-row">
+                <div class="ps-item-name">Basic Salary</div>
+                <div class="ps-item-earn">
+                    <input type="number" name="basic_salary" class="editable-input calc-earn" id="inp-basic" value="0.00" step="0.01">
+                </div>
+                <div class="ps-item-ded t-hide-2 t-hide-3"></div>
+            </div>
+            
+            <div id="dynamic-allowances"></div>
+            
+            <div class="ps-item-row t-hide-print border-0 p-1">
+                <div class="ps-item-name border-0 p-0">
+                    <button type="button" class="btn btn-link btn-sm p-0 text-success text-decoration-none" onclick="addAllowance()"><i class="bi bi-plus"></i> Add Allowance</button>
+                </div>
+                <div class="ps-item-earn border-0"></div><div class="ps-item-ded border-0 t-hide-2 t-hide-3"></div>
+            </div>
+            
+            <div class="ps-total-row t-hide-1">
+                <div class="ps-total-desc">GROSS PAY</div>
+                <div class="ps-total-earn">
+                    <input type="number" name="total_allowance" class="editable-input" id="inp-tot-earn" value="0.00" readonly>
+                </div>
+                <div class="ps-total-ded t-hide-2 t-hide-3"></div>
+            </div>
+            
+            <!-- DEDUCTIONS SECTION -->
+            <div class="ps-section-hdr t-hide-1">
+                <span>DEDUCTIONS</span><span>AMOUNT</span>
+            </div>
+            
+            <div id="dynamic-deductions"></div>
+            
+            <div class="ps-item-row t-hide-print border-0 p-1">
+                <div class="ps-item-name border-0 p-0">
+                    <button type="button" class="btn btn-link btn-sm p-0 text-danger text-decoration-none" onclick="addDeduction()"><i class="bi bi-plus"></i> Add Deduction</button>
+                </div>
+                <div class="ps-item-earn border-0 t-hide-2 t-hide-3"></div><div class="ps-item-ded border-0"></div>
+            </div>
+            
+            <div class="ps-total-row t-hide-1">
+                <div class="ps-total-desc">TOTAL DEDUCTIONS</div>
+                <div class="ps-total-earn t-hide-2 t-hide-3"></div>
+                <div class="ps-total-ded">
+                    <input type="number" name="total_deduction" class="editable-input" id="inp-tot-ded" value="0.00" readonly>
+                </div>
+            </div>
+            
+        </div>
+        
+        <!-- THEME 1 TOTALS -->
+        <div class="ps-total-row t-hide-2 t-hide-3">
+            <div class="ps-total-desc">Total</div>
+            <div class="ps-total-earn"><span id="t1-tot-earn">0.00</span></div>
+            <div class="ps-total-ded"><span id="t1-tot-ded">0.00</span></div>
+        </div>
+        
+        <div class="ps-footer">
+            <div class="ps-footer-left">
+                <div class="ps-info-row border-0"><div class="ps-info-label">Payment Date</div><div class="ps-info-val"><input type="text" class="editable-input editable-text-left" value="28 Jan 2024"></div></div>
+                <div class="ps-info-row border-0"><div class="ps-info-label">Status</div><div class="ps-info-val">Processed</div></div>
+            </div>
+            <div class="ps-footer-right">
+                <div class="ps-net-pay-bar">NET PAY</div>
+                <div class="ps-net-amount">
+                    <span class="t-hide-1">NET PAY</span>
+                    <span><input type="number" name="final_in_hand_salary" class="editable-input fw-bold" id="inp-net" value="0.00" readonly style="font-size: 1.2rem;"></span>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</form>
+
+<script>
+    // Initialize Drag & Drop for Info Rows
+    Sortable.create(document.getElementById('sortable-col-1'), { group: 'shared', animation: 150 });
+    Sortable.create(document.getElementById('sortable-col-2'), { group: 'shared', animation: 150 });
+
+    const canvas = document.getElementById('payslip-canvas');
+    const themeSelector = document.getElementById('theme_selector');
+    const empSelector = document.getElementById('emp_selector');
+    
+    themeSelector.addEventListener('change', function() {
+        canvas.className = 'shadow ' + this.value;
+        applyThemeVisibility(this.value);
+    });
+    
+    function applyThemeVisibility(theme) {
+        document.querySelectorAll('.t-hide-1, .t-hide-2, .t-hide-3').forEach(el => el.style.display = '');
+        
+        if (theme === 'theme-1') {
+            document.querySelectorAll('.t-hide-1').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.ps-item-ded').forEach(el => el.classList.remove('t-hide-1'));
+        } else if (theme === 'theme-2') {
+            document.querySelectorAll('.t-hide-2').forEach(el => el.style.display = 'none');
+        } else if (theme === 'theme-3') {
+            document.querySelectorAll('.t-hide-3').forEach(el => el.style.display = 'none');
+        }
+    }
+    
+    applyThemeVisibility('theme-1');
+    
+    empSelector.addEventListener('change', function() {
+        const empId = this.value;
+        if (!empId) return;
+        
+        document.getElementById('form_emp_id').value = empId;
+        
+        fetch(`/api/employee/${empId}`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.error) return alert(data.error);
+                
+                const emp = data.employee;
+                document.getElementById('lbl-name').innerText = emp.emp_name || '-';
+                document.getElementById('lbl-empid').innerText = emp.emp_id || '-';
+                document.getElementById('lbl-phone').innerText = emp.phone_number || '-';
+                document.getElementById('lbl-email').innerText = emp.email || '-';
+                document.getElementById('lbl-title').innerText = emp.title || '-';
+                document.getElementById('lbl-dept').innerText = emp.department || '-';
+                
+                document.getElementById('lbl-bank').innerText = emp.bank_name || '-';
+                document.getElementById('lbl-acct').innerText = emp.bank_account_num || '-';
+                document.getElementById('lbl-ifsc').innerText = emp.ifsc_code || '-';
+                
+                document.getElementById('inp-basic').value = parseFloat(emp.basic_salary || 0).toFixed(2);
+                
+                document.getElementById('dynamic-allowances').innerHTML = '';
+                document.getElementById('dynamic-deductions').innerHTML = '';
+                
+                const components = data.components || [];
+                components.forEach(f => {
+                    if (f.component_code === 1) addAllowance(f.component_name, f.amount);
+                    else if (f.component_code === 2) addDeduction(f.component_name, f.amount);
+                });
+                
+                calculateTotals();
+            });
+    });
+    
+    function createRowHTML(name, amount, typeClass, code) {
+        let isEarn = code === 1;
+        return `
+            <div class="ps-item-row align-items-center">
+                <input type="hidden" name="component_code[]" value="${code}">
+                <div class="ps-item-name"><input type="text" name="component_name[]" class="editable-input editable-text-left" value="${name}"></div>
+                <div class="ps-item-earn ${!isEarn ? 't-hide-2 t-hide-3' : ''}">
+                    ${isEarn ? `<input type="number" name="component_amount[]" class="editable-input ${typeClass}" value="${parseFloat(amount).toFixed(2)}" step="0.01" onchange="calculateTotals()" onkeyup="calculateTotals()">` : ''}
+                </div>
+                <div class="ps-item-ded ${isEarn ? 't-hide-2 t-hide-3' : ''}">
+                    ${!isEarn ? `<input type="number" name="component_amount[]" class="editable-input ${typeClass}" value="${parseFloat(amount).toFixed(2)}" step="0.01" onchange="calculateTotals()" onkeyup="calculateTotals()">` : ''}
+                    <button type="button" class="btn btn-sm text-danger border-0 p-0 ms-1 t-hide-print" onclick="this.parentElement.parentElement.remove(); calculateTotals();"><i class="bi bi-x"></i></button>
+                </div>
+            </div>
+        `;
+    }
+    
+    function addAllowance(name = 'New Allowance', amount = 0) {
+        document.getElementById('dynamic-allowances').insertAdjacentHTML('beforeend', createRowHTML(name, amount, 'calc-earn', 1));
+        calculateTotals();
+    }
+    
+    function addDeduction(name = 'New Deduction', amount = 0) {
+        document.getElementById('dynamic-deductions').insertAdjacentHTML('beforeend', createRowHTML(name, amount, 'calc-ded', 2));
+        calculateTotals();
+    }
+    
+    function calculateTotals() {
+        let earn = 0;
+        document.querySelectorAll('.calc-earn').forEach(el => earn += parseFloat(el.value || 0));
+        let ded = 0;
+        document.querySelectorAll('.calc-ded').forEach(el => ded += parseFloat(el.value || 0));
+        
+        const net = earn - ded;
+        
+        document.getElementById('inp-tot-earn').value = earn.toFixed(2);
+        document.getElementById('inp-tot-ded').value = ded.toFixed(2);
+        document.getElementById('inp-net').value = net.toFixed(2);
+        
+        document.getElementById('t1-tot-earn').innerText = earn.toFixed(2);
+        document.getElementById('t1-tot-ded').innerText = ded.toFixed(2);
+    }
+    
+    if(empSelector.value) empSelector.dispatchEvent(new Event('change'));
+    
+    function savePayslip() {
+        if (!empSelector.value) return alert('Please select an employee first!');
+        document.getElementById('payslip-form').submit();
+    }
+    
+    document.getElementById('inp-basic').addEventListener('change', calculateTotals);
+    document.getElementById('inp-basic').addEventListener('keyup', calculateTotals);
+</script>
+{% endblock %}

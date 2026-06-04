@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-1 text-primary d-flex align-items-center fw-bold">
+                <i class="bi bi-cash-coin me-2"></i> Employee Financials
+            </h4>
+            <p class="text-secondary small mb-0">Manage individual Bank Details, Basic Salary, Allowances, and Deductions.</p>
+        </div>
+        <div class="w-25">
+            <div class="input-group input-group-sm shadow-sm">
+                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                <input type="text" id="financialSearch" class="form-control border-start-0 ps-0" placeholder="Search by Name, Emp ID, A/c No..." onkeyup="filterFinancials()">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Flash Alert Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="row mb-4">
+            <div class="col-12">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm border-0 d-flex align-items-center" role="alert">
+                        {% if category == 'success' %}
+                            <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                        {% elif category == 'danger' %}
+                            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                        {% elif category == 'warning' %}
+                            <i class="bi bi-exclamation-circle-fill me-2 fs-5"></i>
+                        {% else %}
+                            <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+                        {% endif %}
+                        <div>
+                            {{ message|safe }}
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+{% endwith %}
+
+<div class="card shadow-sm border-0 mb-4 card-glow">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 custom-table">
+                <thead class="table-light text-secondary text-uppercase fs-8 tracking-wider">
+                    <tr>
+                        <th class="ps-4">Emp ID</th>
+                        <th>Name</th>
+                        <th>Bank Details</th>
+                        <th>Basic (₹)</th>
+                        <th>Allowances (₹)</th>
+                        <th>Deductions (₹)</th>
+                        <th>Net Salary (₹)</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for emp in employees %}
+                    <tr>
+                        <td class="ps-4 fw-medium text-dark"><span class="badge bg-light text-dark border">{{ emp.emp_id }}</span></td>
+                        <td>
+                            <div class="fw-semibold text-dark">{{ emp.emp_name }}</div>
+                        </td>
+                        <td>
+                            {% if emp.bank_name %}
+                                <div class="fs-7"><i class="bi bi-bank me-1 text-primary"></i> {{ emp.bank_name }}</div>
+                                <div class="small text-secondary font-monospace">{{ emp.bank_account_num }} ({{ emp.ifsc_code }})</div>
+                            {% else %}
+                                <span class="badge bg-light text-secondary border">Not Provided</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-medium text-dark">
+                            ₹{{ "{:,.2f}".format(emp.basic_salary|float) }}
+                        </td>
+                        {% set totals = namespace(allowance=0.0, deduction=0.0) %}
+                        {% if emp.emp_id in emp_components %}
+                            {% for comp in emp_components[emp.emp_id] %}
+                                {% if comp.component_code == 1 %}
+                                    {% set totals.allowance = totals.allowance + comp.amount|float %}
+                                {% elif comp.component_code == 2 %}
+                                    {% set totals.deduction = totals.deduction + comp.amount|float %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                        <td class="text-success fw-medium">
+                            + ₹{{ "{:,.2f}".format(totals.allowance) }}
+                        </td>
+                        <td class="text-danger fw-medium">
+                            - ₹{{ "{:,.2f}".format(totals.deduction) }}
+                        </td>
+                        <td class="fw-bold text-primary">
+                            ₹{{ "{:,.2f}".format((emp.basic_salary|float) + totals.allowance - totals.deduction) }}
+                        </td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('{{ emp.emp_id }}', '{{ emp.emp_name|replace("'", "\\'") }}', '{{ emp.bank_name|default("") }}', '{{ emp.bank_account_num|default("") }}', '{{ emp.ifsc_code|default("") }}', '{{ emp.basic_salary }}')" type="button">
+                                <i class="bi bi-pencil-square me-1"></i> Edit Financials
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not employees %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">No employees found.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Financials Modal -->
+<div class="modal fade" id="editFinancialsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Edit Financials: <span id="modalEmpName" class="fw-bold"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body bg-light p-4">
+                <form id="editFinancialsForm" action="{{ url_for('update_employee_financials') }}" method="POST">
+                    <input type="hidden" name="emp_id" id="modalEmpId">
+                    
+                    <div class="row g-3 mb-4">
+                        <div class="col-12"><h6 class="text-primary border-bottom pb-1 fw-semibold text-uppercase fs-7 tracking-wider">Bank Details</h6></div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-medium fs-7">Bank Name</label>
+                            <input type="text" class="form-control form-control-sm" name="bank_name" id="modalBankName">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-medium fs-7">Account Number</label>
+                            <input type="text" class="form-control form-control-sm font-monospace" name="bank_account_num" id="modalBankAcc">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-medium fs-7">IFSC Code</label>
+                            <input type="text" class="form-control form-control-sm font-monospace text-uppercase" name="ifsc_code" id="modalIfsc">
+                        </div>
+                    </div>
+                    
+                    <div class="row g-3 mb-4">
+                        <div class="col-12"><h6 class="text-primary border-bottom pb-1 fw-semibold text-uppercase fs-7 tracking-wider">Basic Salary</h6></div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-medium fs-7">Basic Salary (₹)</label>
+                            <input type="number" step="0.01" class="form-control form-control-sm fw-bold text-success" name="basic_salary" id="modalBasicSalary">
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-12 d-flex justify-content-between align-items-center border-bottom pb-1 mb-2">
+                            <h6 class="text-primary fw-semibold text-uppercase fs-7 tracking-wider mb-0">Financial Components</h6>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fs-7" onclick="addComponentRow()"><i class="bi bi-plus-lg"></i> Add Component</button>
+                        </div>
+                        <div class="col-12">
+                            <div id="componentsContainer" class="d-flex flex-column gap-2">
+                                <!-- Component rows will be injected here via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light border-top-0 pt-0">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('editFinancialsForm').submit()">
+                    <i class="bi bi-floppy me-1"></i> Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden data for JavaScript -->
+<script>
+    const empComponentsData = {
+        {% for emp_id, comps in emp_components.items() %}
+            "{{ emp_id }}": [
+                {% for c in comps %}
+                    {"name": "{{ c.component_name|replace('"', '\\"') }}", "code": {{ c.component_code }}, "amount": {{ c.amount }} }{% if not loop.last %},{% endif %}
+                {% endfor %}
+            ]{% if not loop.last %},{% endif %}
+        {% endfor %}
+    };
+
+    function openEditModal(empId, empName, bankName, bankAcc, ifsc, basicSalary) {
+        document.getElementById('modalEmpId').value = empId;
+        document.getElementById('modalEmpName').textContent = empName;
+        document.getElementById('modalBankName').value = bankName;
+        document.getElementById('modalBankAcc').value = bankAcc;
+        document.getElementById('modalIfsc').value = ifsc;
+        document.getElementById('modalBasicSalary').value = basicSalary;
+        
+        const container = document.getElementById('componentsContainer');
+        container.innerHTML = ''; // clear existing
+        
+        const comps = empComponentsData[empId] || [];
+        if (comps.length > 0) {
+            comps.forEach(c => addComponentRow(c.name, c.code, c.amount));
+        } else {
+            // Provide at least one empty row
+            addComponentRow();
+        }
+        
+        new bootstrap.Modal(document.getElementById('editFinancialsModal')).show();
+    }
+    
+    function addComponentRow(name = '', code = 1, amount = '') {
+        const container = document.getElementById('componentsContainer');
+        const row = document.createElement('div');
+        row.className = 'input-group input-group-sm component-row';
+        row.innerHTML = `
+            <input type="text" class="form-control w-40" name="component_name[]" placeholder="Component Name (e.g. HRA)" value="${name}" required>
+            <select class="form-select" name="component_code[]">
+                <option value="1" ${code == 1 ? 'selected' : ''}>Allowance (+)</option>
+                <option value="2" ${code == 2 ? 'selected' : ''}>Deduction (-)</option>
+            </select>
+            <input type="number" step="0.01" class="form-control w-25" name="component_amount[]" placeholder="Amount (₹)" value="${amount}" required>
+            <button class="btn btn-outline-danger" type="button" onclick="this.parentElement.remove()">
+                <i class="bi bi-trash"></i>
+            </button>
+        `;
+        container.appendChild(row);
+    }
+
+    function filterFinancials() {
+        const input = document.getElementById("financialSearch").value.toLowerCase();
+        const table = document.querySelector(".custom-table");
+        const tr = table.getElementsByTagName("tr");
+        
+        for (let i = 1; i < tr.length; i++) {
+            if (tr[i].cells.length < 3) continue; // Skip 'No records' row
+            
+            const empId = tr[i].cells[0].textContent.toLowerCase();
+            const empName = tr[i].cells[1].textContent.toLowerCase();
+            const bankDetails = tr[i].cells[2].textContent.toLowerCase();
+            
+            if (empId.indexOf(input) > -1 || empName.indexOf(input) > -1 || bankDetails.indexOf(input) > -1) {
+                tr[i].style.display = "";
+            } else {
+                tr[i].style.display = "none";
+            }
+        }
+    }
+</script>
+
+{% endblock %}

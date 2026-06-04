@@ -1,0 +1,4 @@
+emp_id,emp_name,email,basic_salary
+T-01,Test One,test1@example.com,50000
+T-02,Test Two,invalid-email,60000
+,Test Three,test3@example.com,70000

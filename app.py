@@ -45,20 +45,16 @@ def amount_to_words_rupees(num):
         
     return words.strip()
 
-def get_dynamic_payroll_and_bank(basic_base, title, directorate, department, emp_id_or_seed):
+def get_dynamic_payroll_and_bank(basic_base, title, department, emp_id_or_seed):
     """
     Computes payroll details and bank details.
-    - Role-level metrics (allowance %, tax %, bank name) are stable per (title, directorate, department).
-    - basic_salary has a per-employee ±20% variation using emp_id_or_seed.
-    - bank_account_num is unique per employee.
-    Returns structured dicts for allowances and taxes.
     """
-    # 1. Role-stable seed
-    combo_str = f"{str(title).strip().lower()}|{str(directorate).strip().lower()}|{str(department).strip().lower()}"
+    import hashlib
+    import random
+    combo_str = f"{str(title).strip().lower()}|{str(department).strip().lower()}"
     role_seed = int(hashlib.md5(combo_str.encode('utf-8')).hexdigest(), 16) % 20000
     random.seed(role_seed)
 
-    # Role-based percentages
     meal_pct = random.choice([0.05, 0.06, 0.07, 0.08, 0.09, 0.10])
     transport_pct = random.choice([0.04, 0.05, 0.06, 0.07, 0.08])
     medical_pct = random.choice([0.02, 0.03, 0.04, 0.05])
@@ -67,37 +63,31 @@ def get_dynamic_payroll_and_bank(basic_base, title, directorate, department, emp
     banks = ["Bank of America", "Chase Bank", "Wells Fargo", "Citibank", "HSBC", "HDFC Bank", "ICICI Bank"]
     bank_name = random.choice(banks)
 
-    # 2. Per-employee salary variation (±20%) — makes same-role salaries different
     random.seed(emp_id_or_seed + 99999)
     variation_pct = random.uniform(-0.20, 0.20)
     basic_salary = round(float(basic_base) * (1 + variation_pct), 2)
 
-    # 3. Calculate amounts
     meal_allowance = round(basic_salary * meal_pct, 2)
     transportation_allowance = round(basic_salary * transport_pct, 2)
     medical_allowance = round(basic_salary * medical_pct, 2)
     retirement_insurance = round(basic_salary * retirement_pct, 2)
     tax_amount = round(basic_salary * tax_pct, 2)
 
-    allowances_total = meal_allowance + transportation_allowance + medical_allowance
-    deductions_total = retirement_insurance + tax_amount
-
-    # 4. Per-employee unique bank account
     random.seed(emp_id_or_seed + 12345)
     bank_account_num = "".join([str(random.randint(0, 9)) for _ in range(10)])
+    ifsc_code = bank_name[:4].upper() + "0" + "".join([str(random.randint(0, 9)) for _ in range(6)])
 
     allowances_list = [
-        ('meal_allowance', meal_allowance),
-        ('transportation_allowance', transportation_allowance),
-        ('medical_allowance', medical_allowance),
+        ('Meal Allowance', meal_allowance),
+        ('Transportation Allowance', transportation_allowance),
+        ('Medical Allowance', medical_allowance),
     ]
     taxes_list = [
-        ('retirement_insurance', retirement_insurance),
-        ('professional_tax', tax_amount),
+        ('Retirement Insurance', retirement_insurance),
+        ('Professional Tax', tax_amount),
     ]
 
-    return (basic_salary, allowances_total, deductions_total,
-            bank_name, bank_account_num, allowances_list, taxes_list)
+    return (basic_salary, bank_name, bank_account_num, ifsc_code, allowances_list, taxes_list)
 
 app = Flask(__name__)
 app.secret_key = "employee_management_system_secret_key"
@@ -123,349 +113,122 @@ def get_db_connection():
     )
 
 def init_db():
-    """Initializes the MySQL database and normalized table structure at application startup."""
-
-    conn = pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD
-    )
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
-        conn.commit()
-    finally:
-        conn.close()
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # --- Main employees table ---
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS employees (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    emp_id VARCHAR(50) NOT NULL UNIQUE,
-                    emp_name VARCHAR(100) NOT NULL,
-                    email VARCHAR(100) NOT NULL,
-                    date DATE NOT NULL,
-                    basic_salary DECIMAL(10,2) DEFAULT 45000.00,
-                    allowances DECIMAL(10,2) DEFAULT 0.00,
-                    deductions DECIMAL(10,2) DEFAULT 0.00,
-                    age INT DEFAULT 30,
-                    gender VARCHAR(20) DEFAULT 'Male',
-                    education VARCHAR(100) DEFAULT 'B.Tech'
-                )
-            """)
+            # 1. Read and execute schema.sql for base tables
+            with open('schema.sql', 'r') as f:
+                sql_script = f.read()
+            for statement in sql_script.split(';'):
+                if statement.strip():
+                    cursor.execute(statement)
             
-            # Database Self-Healing Migration: Add columns if they do not exist
-            for col_name, col_def in [
-                ("age", "INT DEFAULT 30"),
-                ("gender", "VARCHAR(20) DEFAULT 'Male'"),
-                ("education", "VARCHAR(100) DEFAULT 'B.Tech'")
-            ]:
+            # 2. Self-healing / Migrations
+            # Rename city -> posting_location
+            cursor.execute("SHOW COLUMNS FROM employees LIKE 'city'")
+            if cursor.fetchone():
                 try:
-                    cursor.execute(f"ALTER TABLE employees ADD COLUMN {col_name} {col_def}")
-                except pymysql.err.OperationalError as e:
-                    if e.args[0] == 1060:
-                        pass
-                    else:
-                        raise
-
-            # Self-healing logic for expanded employee details
-            cols_to_add = [
-                ("title", "VARCHAR(100) DEFAULT 'Staff'"),
-                ("directorate", "VARCHAR(100) DEFAULT 'Operation'"),
-                ("department", "VARCHAR(100) DEFAULT 'General Affairs'"),
-                ("bank_name", "VARCHAR(100) DEFAULT 'Bank of America'"),
-                ("bank_account_num", "VARCHAR(50) DEFAULT '1234567890'"),
-                ("meal_allowance", "DECIMAL(10,2) DEFAULT 300.00"),
-                ("transportation_allowance", "DECIMAL(10,2) DEFAULT 300.00"),
-                ("medical_allowance", "DECIMAL(10,2) DEFAULT 300.00"),
-                ("retirement_insurance", "DECIMAL(10,2) DEFAULT 25.00"),
-                ("tax", "DECIMAL(10,2) DEFAULT 25.00"),
-                ("joining_year", "INT DEFAULT 2026"),
-                ("city", "VARCHAR(100) DEFAULT 'Bangalore'"),
-                ("payment_tier", "INT DEFAULT 3"),
-                ("ever_benched", "VARCHAR(10) DEFAULT 'No'"),
-                ("experience_in_current_domain", "INT DEFAULT 2"),
-                ("leave_or_not", "INT DEFAULT 0")
-            ]
-            for col_name, col_def in cols_to_add:
+                    cursor.execute("ALTER TABLE employees CHANGE city posting_location VARCHAR(100) DEFAULT 'Bangalore'")
+                except Exception as e:
+                    pass
+            
+            # Rename date -> date_of_birth
+            cursor.execute("SHOW COLUMNS FROM employees LIKE 'date'")
+            if cursor.fetchone():
                 try:
-                    cursor.execute(f"ALTER TABLE employees ADD COLUMN {col_name} {col_def}")
-                except pymysql.err.OperationalError as e:
-                    if e.args[0] == 1060:
-                        pass
-                    else:
-                        raise
-
-            # --- Normalized satellite tables ---
-
-            # Bank details: one row per employee
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS employee_bank_details (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    emp_id VARCHAR(50) NOT NULL UNIQUE,
-                    bank_name VARCHAR(100) DEFAULT 'Bank of America',
-                    bank_account_num VARCHAR(50) DEFAULT '0000000000',
-                    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
-                )
-            """)
-
-            # Allowances: multiple rows per employee (one per allowance type)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS employee_allowances (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    emp_id VARCHAR(50) NOT NULL,
-                    allowance_type VARCHAR(100) NOT NULL,
-                    amount DECIMAL(10,2) DEFAULT 0.00,
-                    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
-                )
-            """)
-
-            # Taxes/deductions: multiple rows per employee
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS employee_taxes (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    emp_id VARCHAR(50) NOT NULL,
-                    tax_type VARCHAR(100) NOT NULL,
-                    amount DECIMAL(10,2) DEFAULT 0.00,
-                    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
-                )
-            """)
-
-            # --- Migrate existing data from employees flat columns to new tables ---
-            # Find employees that have flat columns but no satellite records yet
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'bank_name'")
-            has_bank_col = cursor.fetchone() is not None
-
-            if has_bank_col:
-                cursor.execute("""
-                    SELECT e.emp_id, e.bank_name, e.bank_account_num,
-                           e.meal_allowance, e.transportation_allowance, e.medical_allowance,
-                           e.retirement_insurance, e.tax
-                    FROM employees e
-                    LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
-                    WHERE b.emp_id IS NULL
-                """)
-                migrate_rows = cursor.fetchall()
-                for mr in migrate_rows:
-                    eid = mr['emp_id']
-                    # Bank details
-                    cursor.execute(
-                        "INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num) VALUES (%s, %s, %s)",
-                        (eid, mr.get('bank_name', 'Bank of America'), mr.get('bank_account_num', '0000000000'))
-                    )
-                    # Allowances — only insert if no records exist for this emp
-                    cursor.execute("SELECT COUNT(*) as cnt FROM employee_allowances WHERE emp_id = %s", (eid,))
-                    if cursor.fetchone()['cnt'] == 0:
-                        meal = float(mr.get('meal_allowance') or 0)
-                        transport = float(mr.get('transportation_allowance') or 0)
-                        medical = float(mr.get('medical_allowance') or 0)
-                        for atype, aamount in [('meal_allowance', meal), ('transportation_allowance', transport), ('medical_allowance', medical)]:
-                            cursor.execute(
-                                "INSERT INTO employee_allowances (emp_id, allowance_type, amount) VALUES (%s, %s, %s)",
-                                (eid, atype, aamount)
-                            )
-                    # Taxes — only insert if no records exist
-                    cursor.execute("SELECT COUNT(*) as cnt FROM employee_taxes WHERE emp_id = %s", (eid,))
-                    if cursor.fetchone()['cnt'] == 0:
-                        ret = float(mr.get('retirement_insurance') or 0)
-                        tx = float(mr.get('tax') or 0)
-                        for ttype, tamount in [('retirement_insurance', ret), ('professional_tax', tx)]:
-                            cursor.execute(
-                                "INSERT INTO employee_taxes (emp_id, tax_type, amount) VALUES (%s, %s, %s)",
-                                (eid, ttype, tamount)
-                            )
-
-                # Recalculate allowances/deductions totals in main table from satellite tables
-                cursor.execute("""
-                    UPDATE employees e
-                    SET allowances = COALESCE((SELECT SUM(amount) FROM employee_allowances WHERE emp_id = e.emp_id), 0),
-                        deductions = COALESCE((SELECT SUM(amount) FROM employee_taxes WHERE emp_id = e.emp_id), 0)
-                """)
-
-            # --- New tables for transaction history and email log ---
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS payroll_transactions (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    emp_id VARCHAR(50) NOT NULL,
-                    salary_month VARCHAR(20) NOT NULL,
-                    salary_year INT NOT NULL,
-                    basic_salary DECIMAL(10,2) DEFAULT 0.00,
-                    allowances DECIMAL(10,2) DEFAULT 0.00,
-                    deductions DECIMAL(10,2) DEFAULT 0.00,
-                    net_pay DECIMAL(10,2) DEFAULT 0.00,
-                    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS employee_emails (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    emp_id VARCHAR(50) NOT NULL,
-                    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    subject VARCHAR(255),
-                    body TEXT,
-                    response_received_at DATETIME,
-                    response_notes TEXT,
-                    status VARCHAR(20) DEFAULT 'Sent',
-                    FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
-                )
-            """)
-
-            # --- Drop old flat columns from employees after migration is done ---
-            flat_cols_to_drop = [
-                'bank_name', 'bank_account_num',
-                'meal_allowance', 'transportation_allowance', 'medical_allowance',
-                'retirement_insurance', 'tax'
-            ]
-            for col in flat_cols_to_drop:
-                try:
-                    cursor.execute(f"ALTER TABLE employees DROP COLUMN {col}")
-                except pymysql.err.OperationalError as e:
-                    if e.args[0] in (1091, 1060):
-                        pass
-                    else:
-                        raise
-
-            # One-time data correction: Randomize ages for existing records that default to 30
-            cursor.execute("SELECT id FROM employees WHERE age = 30")
-            existing_rows = cursor.fetchall()
-            if existing_rows:
-                for idx, r in enumerate(existing_rows):
-                    # Seed to keep it deterministic for successive restarts but varied across records
-                    random.seed(r['id'] + 100)
-                    random_age = random.randint(21, 58)
-                    cursor.execute("UPDATE employees SET age = %s WHERE id = %s", (random_age, r['id']))
-
-            # One-time payroll correction: Recalculate dynamic values for old default records
-            cursor.execute("SELECT id, basic_salary FROM employees WHERE title = 'Staff' OR title IS NULL")
-            default_rows = cursor.fetchall()
-            if default_rows:
-                designations_1 = ["Director of Tech", "VP of Operations", "Research Fellow", "HR Director"]
-                designations_2 = ["Senior Software Engineer", "Systems Architect", "Lead QA Engineer", "HR Manager"]
-                designations_3 = ["Associate Engineer", "Operations Analyst", "Customer Support", "Marketing Associate"]
-                directorate_list = ["Engineering", "Operations", "Information Technology", "Product & Design"]
-                department_list = ["Core Development", "Data Platform", "QA & Testing", "Cloud Operations"]
-
-                for r in default_rows:
-                    emp_db_id = r['id']
-                    basic_val = float(r['basic_salary'])
-                    random.seed(emp_db_id + 200)
-                    if basic_val >= 80000:
-                        title_val = designations_1[emp_db_id % len(designations_1)]
-                        dir_val = "Management"; dept_val = "Leadership"; basic_base = 85000.00
-                    elif basic_val >= 50000:
-                        title_val = designations_2[emp_db_id % len(designations_2)]
-                        dir_val = directorate_list[emp_db_id % len(directorate_list)]
-                        dept_val = department_list[emp_db_id % len(department_list)]; basic_base = 50000.00
-                    else:
-                        title_val = designations_3[emp_db_id % len(designations_3)]
-                        dir_val = "Operations"; dept_val = "General Support"; basic_base = 32000.00
-
-                    (basic_salary, allowances_total, deductions_total,
-                     bank_name_val, bank_account_num_val, allowances_list, taxes_list) = get_dynamic_payroll_and_bank(
-                        basic_base, title_val, dir_val, dept_val, emp_db_id
-                    )
-                    cursor.execute(
-                        "UPDATE employees SET title=%s, directorate=%s, department=%s, basic_salary=%s, allowances=%s, deductions=%s WHERE id=%s",
-                        (title_val, dir_val, dept_val, basic_salary, allowances_total, deductions_total, emp_db_id)
-                    )
-                    cursor.execute("INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num) SELECT emp_id, %s, %s FROM employees WHERE id=%s",
-                                   (bank_name_val, bank_account_num_val, emp_db_id))
-                    cursor.execute("SELECT emp_id FROM employees WHERE id=%s", (emp_db_id,))
-                    row = cursor.fetchone()
-                    if row:
-                        eid = row['emp_id']
-                        cursor.execute("SELECT COUNT(*) as c FROM employee_allowances WHERE emp_id=%s", (eid,))
-                        if cursor.fetchone()['c'] == 0:
-                            for atype, amt in allowances_list:
-                                cursor.execute("INSERT INTO employee_allowances (emp_id,allowance_type,amount) VALUES(%s,%s,%s)", (eid, atype, amt))
-                        cursor.execute("SELECT COUNT(*) as c FROM employee_taxes WHERE emp_id=%s", (eid,))
-                        if cursor.fetchone()['c'] == 0:
-                            for ttype, amt in taxes_list:
-                                cursor.execute("INSERT INTO employee_taxes (emp_id,tax_type,amount) VALUES(%s,%s,%s)", (eid, ttype, amt))
-                
-            # One-time correction for new Kaggle columns (making them dynamic/randomized)
-            cursor.execute("SELECT id, date, age, basic_salary, title, directorate, department FROM employees WHERE joining_year = 2026 AND city = 'Bangalore'")
-            new_col_rows = cursor.fetchall()
-            if new_col_rows:
-                cities = ["Bangalore", "New Delhi", "Pune", "Mumbai", "Hyderabad", "Chennai"]
-                benched_opts = ["No", "Yes", "No", "No"]
-                for r in new_col_rows:
-                    emp_db_id = r['id']
-                    age_val = r['age']
-                    basic_val = float(r['basic_salary'])
-                    title_val = r['title']
-                    dir_val = r['directorate']
-                    dept_val = r['department']
+                    cursor.execute("ALTER TABLE employees CHANGE date date_of_birth DATE NOT NULL")
+                except Exception as e:
+                    pass
+                    
+            # Drop obsolete columns
+            obsolete_cols = ['directorate', 'joining_year', 'ever_benched', 'experience_in_current_domain', 'leave_or_not', 'allowances', 'deductions']
+            for col in obsolete_cols:
+                cursor.execute("SHOW COLUMNS FROM employees LIKE %s", (col,))
+                if cursor.fetchone():
                     try:
-                        date_val = pd.to_datetime(r['date'])
-                        joining_year_val = date_val.year
-                    except Exception:
-                        joining_year_val = 2026
-                    random.seed(emp_db_id + 500)
-                    city_val = cities[random.randint(0, len(cities) - 1)]
-                    ever_benched_val = benched_opts[random.randint(0, len(benched_opts) - 1)]
-                    if basic_val >= 80000:
-                        payment_tier_val = 1; basic_base = 85000.00
-                    elif basic_val >= 50000:
-                        payment_tier_val = 2; basic_base = 50000.00
-                    else:
-                        payment_tier_val = 3; basic_base = 32000.00
-                    experience_val = random.randint(1, min(15, max(1, age_val - 20)))
-                    leave_val = random.randint(0, 5)
-
-                    (basic_salary, allowances_total, deductions_total,
-                     bank_name_val, bank_account_num_val, allowances_list, taxes_list) = get_dynamic_payroll_and_bank(
-                        basic_base, title_val, dir_val, dept_val, emp_db_id
-                    )
-                    cursor.execute(
-                        """UPDATE employees SET joining_year=%s, city=%s, payment_tier=%s, ever_benched=%s,
-                            experience_in_current_domain=%s, leave_or_not=%s,
-                            basic_salary=%s, allowances=%s, deductions=%s WHERE id=%s""",
-                        (joining_year_val, city_val, payment_tier_val, ever_benched_val,
-                         experience_val, leave_val, basic_salary, allowances_total, deductions_total, emp_db_id)
-                    )
-                    cursor.execute("SELECT emp_id FROM employees WHERE id=%s", (emp_db_id,))
-                    row = cursor.fetchone()
-                    if row:
-                        eid = row['emp_id']
-                        cursor.execute("INSERT IGNORE INTO employee_bank_details (emp_id,bank_name,bank_account_num) VALUES(%s,%s,%s)",
-                                       (eid, bank_name_val, bank_account_num_val))
-                        cursor.execute("SELECT COUNT(*) as c FROM employee_allowances WHERE emp_id=%s", (eid,))
-                        if cursor.fetchone()['c'] == 0:
-                            for atype, amt in allowances_list:
-                                cursor.execute("INSERT INTO employee_allowances(emp_id,allowance_type,amount) VALUES(%s,%s,%s)", (eid, atype, amt))
-                        cursor.execute("SELECT COUNT(*) as c FROM employee_taxes WHERE emp_id=%s", (eid,))
-                        if cursor.fetchone()['c'] == 0:
-                            for ttype, amt in taxes_list:
-                                cursor.execute("INSERT INTO employee_taxes(emp_id,tax_type,amount) VALUES(%s,%s,%s)", (eid, ttype, amt))
+                        cursor.execute(f"ALTER TABLE employees DROP COLUMN {col}")
+                    except Exception as e:
+                        pass
+                        
+            # Ensure joining_date exists
+            cursor.execute("SHOW COLUMNS FROM employees LIKE 'joining_date'")
+            if not cursor.fetchone():
+                try:
+                    cursor.execute("ALTER TABLE employees ADD COLUMN joining_date DATE NOT NULL DEFAULT '2023-01-01'")
+                except Exception as e:
+                    pass
+                    
+            # Add ifsc_code to employee_bank_details
+            cursor.execute("SHOW COLUMNS FROM employee_bank_details LIKE 'ifsc_code'")
+            if not cursor.fetchone():
+                try:
+                    cursor.execute("ALTER TABLE employee_bank_details ADD COLUMN ifsc_code VARCHAR(20) DEFAULT 'BOFA0000001'")
+                except Exception as e:
+                    pass
+                    
+            # Fix employee_financial_components code -> component_code
+            cursor.execute("SHOW COLUMNS FROM employee_financial_components LIKE 'code'")
+            if cursor.fetchone():
+                try:
+                    cursor.execute("ALTER TABLE employee_financial_components CHANGE code component_code TINYINT NOT NULL COMMENT '1 for Allowance, 2 for Deduction'")
+                except Exception as e:
+                    pass
+            
+            # Fix employee_holidays holiday -> holiday_code
+            cursor.execute("SHOW COLUMNS FROM employee_holidays LIKE 'holiday'")
+            if cursor.fetchone():
+                try:
+                    cursor.execute("ALTER TABLE employee_holidays CHANGE holiday holiday_code TINYINT NOT NULL")
+                except Exception as e:
+                    pass
+            
+            # Fix payslip_master generated_at -> generated_on
+            cursor.execute("SHOW COLUMNS FROM payslip_master LIKE 'generated_at'")
+            if cursor.fetchone():
+                try:
+                    cursor.execute("ALTER TABLE payslip_master CHANGE generated_at generated_on DATETIME DEFAULT CURRENT_TIMESTAMP")
+                except Exception as e:
+                    pass
 
         conn.commit()
+    except Exception as e:
+        print(f"Error initializing DB: {e}")
     finally:
         conn.close()
-
 def generate_employee_details(row, offset_index):
     """
     Generates realistic employee details from a row of the Kaggle Employee dataset.
     Returns a dict with all fields for employees + satellite tables.
     """
+    import random
+    import pandas as pd
+    
     age_val = row.get('Age')
     if age_val is None or pd.isna(age_val):
         random.seed(offset_index + 42)
         age = random.randint(21, 58)
     else:
         age = int(age_val)
-    experience = int(row.get('ExperienceInCurrentDomain', 2))
+        
     joining_year = int(row.get('JoiningYear', 2020))
     gender = str(row.get('Gender', 'Male')).strip().capitalize()
     payment_tier = int(row.get('PaymentTier', 3))
-    education = str(row.get('Education', 'B.Tech')).strip()
+    
+    education_text = str(row.get('Education', 'B.Tech')).strip()
+    if 'High School' in education_text or '10th' in education_text or '12th' in education_text:
+        education_code = 0
+    elif 'Diploma' in education_text:
+        education_code = 1
+    elif 'Bachelors' in education_text or 'B.Tech' in education_text:
+        education_code = 2
+    elif 'Masters' in education_text or 'M.Tech' in education_text:
+        education_code = 3
+    elif 'PhD' in education_text:
+        education_code = 4
+    else:
+        education_code = 2
 
-    choice_seed = offset_index + age + experience
+    choice_seed = offset_index + age
     random.seed(choice_seed)
 
     if gender == 'Female':
@@ -480,7 +243,8 @@ def generate_employee_details(row, offset_index):
 
     month = random.randint(1, 12)
     day = random.randint(1, 28)
-    date_str = f"{joining_year}-{month:02d}-{day:02d}"
+    date_of_birth = f"{1990 + (offset_index % 10)}-{month:02d}-{day:02d}"
+    joining_date = f"{joining_year}-{month:02d}-{day:02d}"
 
     if payment_tier == 1:
         basic_base = 85000.00
@@ -494,45 +258,43 @@ def generate_employee_details(row, offset_index):
         "Data Engineer", "Product Manager", "Quality Analyst", "Security Engineer"
     ]
     title = designations[choice_seed % len(designations)]
-    directorate_list = ["Engineering", "Operations", "Information Technology", "Product & Design"]
-    directorate = directorate_list[choice_seed % len(directorate_list)]
     department_list = ["Core Development", "Data Platform", "QA & Testing", "Cloud Operations"]
     department = department_list[choice_seed % len(department_list)]
 
-    (basic_salary, allowances_total, deductions_total,
-     bank_name, bank_account_num, allowances_list, taxes_list) = get_dynamic_payroll_and_bank(
-        basic_base, title, directorate, department, offset_index
+    (basic_salary, bank_name, bank_account_num, ifsc_code, allowances_list, taxes_list) = get_dynamic_payroll_and_bank(
+        basic_base, title, department, offset_index
     )
 
-    city = str(row.get('City', 'Bangalore')).strip()
-    ever_benched = str(row.get('EverBenched', 'No')).strip()
-    try:
-        leave_or_not = int(row.get('LeaveOrNot', 0))
-        if leave_or_not < 0 or leave_or_not > 5:
-            leave_or_not = random.randint(0, 5)
-    except (ValueError, TypeError):
-        leave_or_not = random.randint(0, 5)
+    posting_location = str(row.get('City', 'Bangalore')).strip()
+    
+    holiday_code = random.randint(0, 4)
 
     return {
-        'emp_id': emp_id, 'emp_name': emp_name, 'email': email, 'date_str': date_str,
-        'basic_salary': basic_salary, 'allowances': allowances_total, 'deductions': deductions_total,
-        'age': age, 'gender': gender, 'education': education,
-        'title': title, 'directorate': directorate, 'department': department,
-        'bank_name': bank_name, 'bank_account_num': bank_account_num,
+        'emp_id': emp_id, 'emp_name': emp_name, 'email': email, 'date_of_birth': date_of_birth, 'joining_date': joining_date,
+        'basic_salary': basic_salary, 
+        'age': age, 'gender': gender, 'education': education_code,
+        'title': title, 'department': department,
+        'bank_name': bank_name, 'bank_account_num': bank_account_num, 'ifsc_code': ifsc_code,
         'allowances_list': allowances_list, 'taxes_list': taxes_list,
-        'joining_year': joining_year, 'city': city, 'payment_tier': payment_tier,
-        'ever_benched': ever_benched, 'experience': experience, 'leave_or_not': leave_or_not
+        'posting_location': posting_location, 'payment_tier': payment_tier,
+        'holiday_code': holiday_code
     }
+
 
 @app.route('/')
 def index():
     """Displays the main interface with upload capabilities, manual entry, search, and sorting."""
     search_col = request.args.get('search_col', 'emp_name').strip()
     search_val = request.args.get('search_val', '').strip()
-    sort_order = request.args.get('sort', 'date_desc')  # Default sort by date descending
+    sort_order = request.args.get('sort', 'joining_date_desc')
     selected_tier = request.args.get('tier', 'all').strip()
     
-    # Whitelist of allowed search columns
+    # Advanced Filters
+    filter_dept = request.args.get('filter_dept', '').strip()
+    filter_desig = request.args.get('filter_desig', '').strip()
+    filter_loc = request.args.get('filter_loc', '').strip()
+    filter_gender = request.args.get('filter_gender', '').strip()
+    
     allowed_cols = {
         'emp_name': 'Employee Name',
         'emp_id': 'Employee ID',
@@ -541,25 +303,16 @@ def index():
         'gender': 'Gender',
         'education': 'Education',
         'basic_salary': 'Basic Salary',
-        'meal_allowance': 'Meal Allowance',
-        'transportation_allowance': 'Transport Allowance',
-        'medical_allowance': 'Medical Allowance',
         'allowances': 'Allowances Total',
-        'retirement_insurance': 'Retirement Insurance',
-        'tax': 'Professional Tax',
         'deductions': 'Deductions Total',
         'title': 'Designation/Title',
-        'directorate': 'Directorate',
         'department': 'Department',
+        'posting_location': 'Posting Location',
         'bank_name': 'Bank Name',
         'bank_account_num': 'Bank Account #',
-        'joining_year': 'Joining Year',
-        'city': 'City',
+        'ifsc_code': 'IFSC Code',
         'payment_tier': 'Payment Tier',
-        'ever_benched': 'Ever Benched',
-        'experience_in_current_domain': 'Experience (Years)',
-        'leave_or_not': 'Leave or Not',
-        'date': 'Joining Date'
+        'joining_date': 'Joining Date'
     }
     
     if search_col not in allowed_cols:
@@ -568,48 +321,39 @@ def index():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Base query
     query = """
         SELECT * FROM (
             SELECT 
                 e.*,
                 b.bank_name,
                 b.bank_account_num,
-                COALESCE(a.meal_allowance, 0) AS meal_allowance,
-                COALESCE(a.transportation_allowance, 0) AS transportation_allowance,
-                COALESCE(a.medical_allowance, 0) AS medical_allowance,
-                COALESCE(t.retirement_insurance, 0) AS retirement_insurance,
-                COALESCE(t.tax, 0) AS tax
+                b.ifsc_code
             FROM employees e
             LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
-            LEFT JOIN (
-                SELECT 
-                    emp_id,
-                    SUM(CASE WHEN allowance_type = 'meal_allowance' THEN amount ELSE 0 END) AS meal_allowance,
-                    SUM(CASE WHEN allowance_type = 'transportation_allowance' THEN amount ELSE 0 END) AS transportation_allowance,
-                    SUM(CASE WHEN allowance_type = 'medical_allowance' THEN amount ELSE 0 END) AS medical_allowance
-                FROM employee_allowances
-                GROUP BY emp_id
-            ) a ON e.emp_id = a.emp_id
-            LEFT JOIN (
-                SELECT 
-                    emp_id,
-                    SUM(CASE WHEN tax_type = 'retirement_insurance' THEN amount ELSE 0 END) AS retirement_insurance,
-                    SUM(CASE WHEN tax_type = 'professional_tax' THEN amount ELSE 0 END) AS tax
-                FROM employee_taxes
-                GROUP BY emp_id
-            ) t ON e.emp_id = t.emp_id
         ) AS emp_details WHERE 1=1
     """
     params = []
     
-    # Search functionality
     if search_val:
         query += f" AND `{search_col}` LIKE %s"
-        search_param = f"%{search_val}%"
-        params.append(search_param)
+        params.append(f"%{search_val}%")
         
-    # Salary Tier/Slab label filter
+    if filter_dept:
+        query += " AND department = %s"
+        params.append(filter_dept)
+        
+    if filter_desig:
+        query += " AND title = %s"
+        params.append(filter_desig)
+        
+    if filter_loc:
+        query += " AND posting_location = %s"
+        params.append(filter_loc)
+        
+    if filter_gender:
+        query += " AND gender = %s"
+        params.append(filter_gender)
+        
     if selected_tier == '1':
         query += " AND basic_salary >= 80000"
     elif selected_tier == '2':
@@ -617,11 +361,10 @@ def index():
     elif selected_tier == '3':
         query += " AND basic_salary < 50000"
         
-    # Sort functionality
     if sort_order == 'date_asc':
-        query += " ORDER BY date ASC"
+        query += " ORDER BY joining_date ASC"
     elif sort_order == 'date_desc':
-        query += " ORDER BY date DESC"
+        query += " ORDER BY joining_date DESC"
     elif sort_order == 'name_asc':
         query += " ORDER BY emp_name ASC"
     elif sort_order == 'name_desc':
@@ -631,13 +374,47 @@ def index():
     elif sort_order == 'id_desc':
         query += " ORDER BY emp_id DESC"
     else:
-        query += " ORDER BY date DESC"
+        query += " ORDER BY joining_date DESC"
         
     cursor.execute(query, params)
     employees = cursor.fetchall()
     conn.close()
+    # Analytics for Charts
+    dept_dist = {}
+    gender_dist = {}
+    location_dist = {}
     
-    return render_template('index.html', employees=employees, search_col=search_col, search_val=search_val, allowed_cols=allowed_cols, sort=sort_order, tier=selected_tier)
+    for emp in employees:
+        dept = emp.get('department') or 'Unknown'
+        dept_dist[dept] = dept_dist.get(dept, 0) + 1
+        
+        gender = emp.get('gender') or 'Unknown'
+        gender_dist[gender] = gender_dist.get(gender, 0) + 1
+        
+        loc = emp.get('posting_location') or 'Unknown'
+        location_dist[loc] = location_dist.get(loc, 0) + 1
+        
+    chart_data = {
+        'departments': list(dept_dist.keys()),
+        'dept_counts': list(dept_dist.values()),
+        'genders': list(gender_dist.keys()),
+        'gender_counts': list(gender_dist.values()),
+        'locations': list(location_dist.keys()),
+        'location_counts': list(location_dist.values())
+    }
+    
+    return render_template('index.html', 
+                           employees=employees, 
+                           search_col=search_col, 
+                           search_val=search_val, 
+                           allowed_cols=allowed_cols, 
+                           sort=sort_order, 
+                           tier=selected_tier, 
+                           chart_data=chart_data,
+                           filter_dept=filter_dept,
+                           filter_desig=filter_desig,
+                           filter_loc=filter_loc,
+                           filter_gender=filter_gender)
 
 def find_column(clean_cols, df_cols, synonyms):
     """Helper to find the actual case-sensitive column name from a list of synonyms."""
@@ -647,16 +424,174 @@ def find_column(clean_cols, df_cols, synonyms):
             return df_cols[idx]
     return None
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    """
-    Handles CSV uploads. Flexibly matches columns by common synonyms
-    (e.g., 'Employee ID', 'Name', 'Email Address', 'Date') to import data directly.
-    Falls back to generating details if fields are missing (like the Kaggle dataset).
-    """
-    if 'csv_file' not in request.files:
-        flash("No file selected", "danger")
-        return redirect(url_for('index'))
+import io
+from flask import send_file, jsonify
+
+def find_column(columns_clean, df_cols, synonyms):
+    for idx, col in enumerate(columns_clean):
+        if col in synonyms:
+            return df_cols[idx]
+    return None
+
+        
+    if file and file.filename.endswith('.csv'):
+        # Ensure uploads directory exists
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        file.save(file_path)
+        
+        try:
+            # Read CSV using Pandas
+            df = pd.read_csv(file_path)
+            
+            # Clean and lowercase columns for format check
+            df_cols = list(df.columns)
+            columns_clean = [str(c).strip().lower() for c in df_cols]
+            
+            # Map columns using common synonyms
+            id_col = find_column(columns_clean, df_cols, ['emp_id', 'employee id', 'employee_id', 'id', 'empid', 'employee_code', 'emp_code'])
+            name_col = find_column(columns_clean, df_cols, ['emp_name', 'employee name', 'employee_name', 'name', 'full name', 'fullname'])
+            email_col = find_column(columns_clean, df_cols, ['email', 'email address', 'email_address', 'mail'])
+            date_col = find_column(columns_clean, df_cols, ['date_of_birth', 'dob', 'date', 'birth'])
+            joining_col = find_column(columns_clean, df_cols, ['joining_date', 'doj', 'joining date'])
+            basic_col = find_column(columns_clean, df_cols, ['basic_salary', 'basic salary', 'basic', 'salary'])
+            
+            gender_col = find_column(columns_clean, df_cols, ['gender', 'sex'])
+            age_col = find_column(columns_clean, df_cols, ['age'])
+            education_col = find_column(columns_clean, df_cols, ['education', 'degree', 'qualification'])
+            
+            title_col = find_column(columns_clean, df_cols, ['title', 'designation', 'role', 'job_title'])
+            department_col = find_column(columns_clean, df_cols, ['department', 'dept'])
+            posting_col = find_column(columns_clean, df_cols, ['posting_location', 'location', 'city'])
+            payment_tier_col = find_column(columns_clean, df_cols, ['payment_tier', 'payment tier', 'paymenttier', 'tier'])
+            holiday_col = find_column(columns_clean, df_cols, ['holiday_code', 'holiday'])
+            
+            bank_name_col = find_column(columns_clean, df_cols, ['bank_name', 'bank name', 'bank'])
+            bank_acc_col = find_column(columns_clean, df_cols, ['bank_account_num', 'bank account', 'account number', 'acc_num', 'bank_account'])
+            ifsc_col = find_column(columns_clean, df_cols, ['ifsc_code', 'ifsc'])
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            success_count = 0
+            duplicate_count = 0
+            
+            # CASE 1: CSV contains all direct employee columns (or matched synonyms)
+            if id_col and name_col and email_col:
+                for _, row in df.iterrows():
+                    emp_id = str(row[id_col]).strip()
+                    emp_name = str(row[name_col]).strip()
+                    email = str(row[email_col]).strip()
+                    
+                    try:
+                        date_val = pd.to_datetime(row[date_col]).strftime('%Y-%m-%d') if date_col else '1990-01-01'
+                    except Exception:
+                        date_val = '1990-01-01'
+                    try:
+                        joining_val = pd.to_datetime(row[joining_col]).strftime('%Y-%m-%d') if joining_col else '2020-01-01'
+                    except Exception:
+                        joining_val = '2020-01-01'
+                        
+                    basic_val = float(row[basic_col]) if basic_col else 45000.00
+                    
+                    age_val = int(row[age_col]) if age_col and not pd.isna(row[age_col]) else 30
+                    gender_val = str(row[gender_col]).strip().capitalize() if gender_col and not pd.isna(row[gender_col]) else 'Male'
+                    
+                    education_val = 2
+                    if education_col and not pd.isna(row[education_col]):
+                        try:
+                            education_val = int(row[education_col])
+                        except:
+                            education_val = 2
+                            
+                    title_val = str(row[title_col]).strip() if title_col and not pd.isna(row[title_col]) else 'Software Engineer'
+                    department_val = str(row[department_col]).strip() if department_col and not pd.isna(row[department_col]) else 'IT Department'
+                    posting_val = str(row[posting_col]).strip() if posting_col and not pd.isna(row[posting_col]) else 'Bangalore'
+                    payment_tier_val = int(row[payment_tier_col]) if payment_tier_col and not pd.isna(row[payment_tier_col]) else 3
+                    
+                    bank_name_val = str(row[bank_name_col]).strip() if bank_name_col and not pd.isna(row[bank_name_col]) else 'Bank of America'
+                    bank_account_num_val = str(row[bank_acc_col]).strip() if bank_acc_col and not pd.isna(row[bank_acc_col]) else '1234567890'
+                    ifsc_val = str(row[ifsc_col]).strip() if ifsc_col and not pd.isna(row[ifsc_col]) else 'BOFA0000001'
+                        
+                    holiday_val = 0
+                    if holiday_col and not pd.isna(row[holiday_col]):
+                        try:
+                            holiday_val = int(row[holiday_col])
+                        except:
+                            pass
+                        
+                    try:
+                        cursor.execute(
+                            """INSERT INTO employees (
+                                emp_id, emp_name, email, date_of_birth, joining_date, basic_salary,
+                                age, gender, education, title, department,
+                                posting_location, payment_tier
+                            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            (emp_id, emp_name, email, date_val, joining_val, basic_val,
+                             age_val, gender_val, education_val, title_val, department_val,
+                             posting_val, payment_tier_val)
+                        )
+                        cursor.execute(
+                            """INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) 
+                            VALUES (%s,%s,%s,%s)""",
+                            (emp_id, bank_name_val, bank_account_num_val, ifsc_val)
+                        )
+                        cursor.execute(
+                            """INSERT IGNORE INTO employee_holidays (emp_id, holiday_code) VALUES (%s,%s)""",
+                            (emp_id, holiday_val)
+                        )
+                        success_count += 1
+                    except pymysql.err.IntegrityError:
+                        duplicate_count += 1
+                        
+            # CASE 2: Generate details dynamically
+            else:
+                cursor.execute("SELECT COUNT(*) as cnt FROM employees")
+                current_records_count = cursor.fetchone()['cnt']
+                
+                for idx, row in df.iterrows():
+                    details = generate_employee_details(row, current_records_count + idx)
+                    try:
+                        cursor.execute(
+                            """INSERT INTO employees (
+                                emp_id, emp_name, email, date_of_birth, joining_date, basic_salary,
+                                age, gender, education, title, department,
+                                posting_location, payment_tier
+                            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            (details['emp_id'], details['emp_name'], details['email'], details['date_of_birth'], details['joining_date'],
+                             details['basic_salary'], details['age'], details['gender'], details['education'],
+                             details['title'], details['department'], details['posting_location'], details['payment_tier'])
+                        )
+                        cursor.execute(
+                            """INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) 
+                            VALUES (%s,%s,%s,%s)""",
+                            (details['emp_id'], details['bank_name'], details['bank_account_num'], details['ifsc_code'])
+                        )
+                        cursor.execute(
+                            """INSERT IGNORE INTO employee_holidays (emp_id, holiday_code) VALUES (%s,%s)""",
+                            (details['emp_id'], details['holiday_code'])
+                        )
+                        for atype, amt in details['allowances_list']:
+                            cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,1,%s)", (details['emp_id'], atype, amt))
+                        for ttype, amt in details['taxes_list']:
+                            cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,2,%s)", (details['emp_id'], ttype, amt))
+                        
+                        success_count += 1
+                    except pymysql.err.IntegrityError:
+                        duplicate_count += 1
+            
+            conn.commit()
+            conn.close()
+            
+            msg = f"Successfully imported {success_count} records."
+            if duplicate_count > 0:
+                msg += f" Skipped {duplicate_count} duplicates."
+            flash(msg, "success")
+            
+        except Exception as e:
+            flash(f"Error processing CSV: {str(e)}", "danger")
+            
+    return redirect(url_for('index'))
         
     file = request.files['csv_file']
     if file.filename == '':
@@ -926,41 +861,51 @@ def add_employee():
     emp_id = request.form.get('emp_id', '').strip()
     emp_name = request.form.get('emp_name', '').strip()
     email = request.form.get('email', '').strip()
-    date_val = request.form.get('date', '').strip()
+    date_of_birth = request.form.get('date_of_birth', '').strip()
+    joining_date = request.form.get('joining_date', '').strip()
 
-    basic_val = float(request.form.get('basic_salary', '45000') or 45000)
+    basic_val = float(request.form.get('basic_salary', '0') or 0)
     age_val = request.form.get('age', '').strip()
-    age_val = int(age_val) if age_val else random.randint(21, 58)
+    age_val = int(age_val) if age_val else 30
     gender_val = request.form.get('gender', 'Male').strip()
-    education_val = request.form.get('education', 'B.Tech').strip()
+    education_val = int(request.form.get('education', '2') or 2)
 
     title_val = request.form.get('title', 'Software Engineer').strip()
-    directorate_val = request.form.get('directorate', 'Engineering').strip()
     department_val = request.form.get('department', 'IT Department').strip()
     bank_name_val = request.form.get('bank_name', 'Bank of America').strip()
     bank_account_num_val = request.form.get('bank_account_num', '0000000000').strip()
+    ifsc_code_val = request.form.get('ifsc_code', 'BOFA0000001').strip()
 
-    meal_val = float(request.form.get('meal_allowance', '300') or 300)
-    transport_val = float(request.form.get('transportation_allowance', '300') or 300)
-    medical_val = float(request.form.get('medical_allowance', '300') or 300)
-    retirement_val = float(request.form.get('retirement_insurance', '25') or 25)
-    tax_val = float(request.form.get('tax', '25') or 25)
-
-    try:
-        joining_year_val = int(request.form.get('joining_year', '') or pd.to_datetime(date_val).year)
-    except Exception:
-        joining_year_val = 2026
-    city_val = request.form.get('city', 'Bangalore').strip()
+    posting_location_val = request.form.get('posting_location', 'Bangalore').strip()
     payment_tier_val = int(request.form.get('payment_tier', '3') or 3)
-    ever_benched_val = request.form.get('ever_benched', 'No').strip()
-    experience_val = int(request.form.get('experience_in_current_domain', '2') or 2)
-    leave_val = int(request.form.get('leave_or_not', '0') or 0)
+    holiday_val = int(request.form.get('holiday', '0') or 0)
 
-    allowances_val = meal_val + transport_val + medical_val
-    deductions_val = retirement_val + tax_val
+    # Unified Financial Components (Allowances & Deductions)
+    comp_names = request.form.getlist('component_name[]')
+    comp_amounts = request.form.getlist('component_amount[]')
+    comp_codes = request.form.getlist('component_code[]')
+    
+    allowances_val = 0
+    deductions_val = 0
+    comps_to_insert = []
+    
+    for name, amt, code in zip(comp_names, comp_amounts, comp_codes):
+        name = name.strip()
+        try:
+            amt = float(amt)
+            code = int(code)
+        except ValueError:
+            amt = 0.0
+            code = 1
+        if name and amt >= 0:
+            comps_to_insert.append((name, code, amt))
+            if code == 1:
+                allowances_val += amt
+            elif code == 2:
+                deductions_val += amt
 
-    if not (emp_id and emp_name and email and date_val):
-        flash("All fields are required for manual entry.", "danger")
+    if not (emp_id and emp_name and email and date_of_birth and joining_date):
+        flash("All mandatory fields are required.", "danger")
         return redirect(url_for('index'))
 
     conn = get_db_connection()
@@ -968,34 +913,29 @@ def add_employee():
         with conn.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO employees (
-                    emp_id, emp_name, email, date, basic_salary, allowances, deductions,
-                    age, gender, education, title, directorate, department,
-                    joining_year, city, payment_tier, ever_benched, experience_in_current_domain, leave_or_not
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (emp_id, emp_name, email, date_val, basic_val, allowances_val, deductions_val,
-                 age_val, gender_val, education_val, title_val, directorate_val, department_val,
-                 joining_year_val, city_val, payment_tier_val, ever_benched_val, experience_val, leave_val)
+                    emp_id, emp_name, email, date_of_birth, joining_date, basic_salary, allowances, deductions,
+                    age, gender, education, title, department, posting_location, payment_tier
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (emp_id, emp_name, email, date_of_birth, joining_date, basic_val, allowances_val, deductions_val,
+                 age_val, gender_val, education_val, title_val, department_val, posting_location_val, payment_tier_val)
             )
             cursor.execute(
-                "INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num) VALUES (%s,%s,%s)",
-                (emp_id, bank_name_val, bank_account_num_val)
+                "INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) VALUES (%s,%s,%s,%s)",
+                (emp_id, bank_name_val, bank_account_num_val, ifsc_code_val)
             )
-            for atype, aamount in [('meal_allowance', meal_val), ('transportation_allowance', transport_val), ('medical_allowance', medical_val)]:
+            cursor.execute(
+                "INSERT INTO employee_holidays (emp_id, holiday) VALUES (%s,%s)",
+                (emp_id, holiday_val)
+            )
+            for cname, ccode, camount in comps_to_insert:
                 cursor.execute(
-                    "INSERT INTO employee_allowances (emp_id, allowance_type, amount) VALUES (%s,%s,%s)",
-                    (emp_id, atype, aamount)
-                )
-            for ttype, tamount in [('retirement_insurance', retirement_val), ('professional_tax', tax_val)]:
-                cursor.execute(
-                    "INSERT INTO employee_taxes (emp_id, tax_type, amount) VALUES (%s,%s,%s)",
-                    (emp_id, ttype, tamount)
+                    "INSERT INTO employee_financial_components (emp_id, component_name, code, amount) VALUES (%s,%s,%s,%s)",
+                    (emp_id, cname, ccode, camount)
                 )
         conn.commit()
-        flash(f"Employee '{emp_name}' added successfully!", "success")
-    except pymysql.err.IntegrityError:
-        flash(f"Conflict: Employee ID '{emp_id}' or Email '{email}' already exists.", "danger")
+        flash(f"Employee {emp_name} added successfully!", "success")
     except Exception as e:
-        flash(f"Database error: {str(e)}", "danger")
+        flash(f"Error adding employee: {str(e)}", "danger")
     finally:
         conn.close()
     return redirect(url_for('index'))
@@ -1022,11 +962,10 @@ def clear_records():
     try:
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM employees")
-            # Also clear related satellite tables
             cursor.execute("DELETE FROM employee_bank_details")
-            cursor.execute("DELETE FROM employee_allowances")
-            cursor.execute("DELETE FROM employee_taxes")
-            cursor.execute("DELETE FROM payroll_transactions")
+            cursor.execute("DELETE FROM employee_financial_components")
+            cursor.execute("DELETE FROM payslip_master")
+            cursor.execute("DELETE FROM employee_holidays")
             cursor.execute("DELETE FROM employee_emails")
         conn.commit()
     except Exception as e:
@@ -1034,6 +973,118 @@ def clear_records():
     finally:
         conn.close()
     return redirect(url_for('index'))
+
+@app.route('/employee/<int:id>')
+def employee_profile(id):
+    """Displays the comprehensive profile for an employee, including emails and payslip history."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM employees WHERE id = %s", (id,))
+    employee = cursor.fetchone()
+    if not employee:
+        conn.close()
+        flash("Employee not found.", "danger")
+        return redirect(url_for('index'))
+
+    emp_id = employee['emp_id']
+
+    # Fetch bank details
+    cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
+    bank = cursor.fetchone() or {}
+
+    # Fetch financial components (allowances and deductions)
+    cursor.execute("SELECT * FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+    financials = cursor.fetchall()
+    
+    allowances_data = []
+    deductions_data = []
+    for f in financials:
+        if f['component_code'] == 1:
+            allowances_data.append((f['component_name'], f['amount']))
+        elif f['component_code'] == 2:
+            deductions_data.append((f['component_name'], f['amount']))
+
+    # Fetch payslip transactions (payslip_master)
+    cursor.execute("SELECT * FROM payslip_master WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
+    payroll_transactions = cursor.fetchall()
+
+    # Fetch email logs
+    cursor.execute("SELECT * FROM employee_emails WHERE emp_id = %s ORDER BY sent_at DESC", (emp_id,))
+    email_logs = cursor.fetchall()
+    
+    # Fetch holidays/attendance
+    cursor.execute("SELECT holiday_code, COUNT(*) as count FROM employee_holidays WHERE emp_id = %s GROUP BY holiday_code", (emp_id,))
+    holidays = cursor.fetchall()
+    
+    conn.close()
+
+    total_allowances = sum(amt for _, amt in allowances_data)
+    total_deductions = sum(amt for _, amt in deductions_data)
+    
+    # Process Holiday Data for Chart
+    holiday_labels = {0: 'Present', 1: 'Casual Leave', 2: 'Sick Leave', 3: 'Paid Holiday', 4: 'Absent'}
+    holiday_dist = [0]*5
+    for row in holidays:
+        code = row['holiday_code']
+        if 0 <= code <= 4:
+            holiday_dist[code] = row['count']
+            
+    # Process Email Data for Chart
+    email_months = {}
+    for email in email_logs:
+        month = email['sent_at'].strftime('%Y-%m')
+        email_months[month] = email_months.get(month, 0) + 1
+        
+    profile_chart_data = {
+        'holiday_labels': list(holiday_labels.values()),
+        'holiday_counts': holiday_dist,
+        'email_months': list(reversed(list(email_months.keys())))[:6],
+        'email_counts': list(reversed(list(email_months.values())))[:6]
+    }
+
+    return render_template('employee_profile.html', 
+                           employee=employee, 
+                           bank=bank, 
+                           allowances_data=allowances_data, 
+                           deductions_data=deductions_data,
+                           total_allowances=total_allowances,
+                           total_deductions=total_deductions,
+                           payroll_transactions=payroll_transactions,
+                           email_logs=email_logs,
+                           profile_chart_data=profile_chart_data)
+
+@app.route('/send_email/<int:id>', methods=['POST'])
+def send_email(id):
+    """Simulates sending an email to the employee and logs it."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT emp_id, emp_name, email FROM employees WHERE id = %s", (id,))
+    employee = cursor.fetchone()
+
+    if not employee:
+        conn.close()
+        flash("Employee not found!", "danger")
+        return redirect(url_for('index'))
+
+    emp_id = employee['emp_id']
+    receiver_email = employee['email']
+    sender_email = request.form.get('sender_email', 'admin@maxworth.com').strip()
+    subject = request.form.get('subject', f"Update for {employee['emp_name']}")
+    body = request.form.get('body', "Please review your latest documents.")
+
+    try:
+        cursor.execute(
+            "INSERT INTO employee_emails (emp_id, sender_email, receiver_email, subject, body, status) VALUES (%s, %s, %s, %s, %s, %s)",
+            (emp_id, sender_email, receiver_email, subject, body, 'Sent')
+        )
+        conn.commit()
+        flash(f"Email sent to {employee['emp_name']} ({receiver_email}) and logged successfully.", "success")
+    except Exception as e:
+        flash(f"Error logging email: {str(e)}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for('employee_profile', id=id))
 
 @app.route('/payslip/<int:id>')
 def view_payslip(id):
@@ -1054,31 +1105,20 @@ def view_payslip(id):
     cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
     bank_row = cursor.fetchone() or {}
 
-    # Fetch allowances
-    cursor.execute("SELECT allowance_type, amount FROM employee_allowances WHERE emp_id = %s", (emp_id,))
-    allowances_rows = cursor.fetchall()
-
-    # Fetch taxes
-    cursor.execute("SELECT tax_type, amount FROM employee_taxes WHERE emp_id = %s", (emp_id,))
-    taxes_rows = cursor.fetchall()
+    # Fetch financial components
+    cursor.execute("SELECT component_name, component_code, amount FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+    financials = cursor.fetchall()
     conn.close()
 
     basic = float(employee.get('basic_salary', 0))
-    allowances_data = [(r['allowance_type'], float(r['amount'])) for r in allowances_rows]
-    taxes_data = [(r['tax_type'], float(r['amount'])) for r in taxes_rows]
-
-    # Fallback to old flat columns if satellite tables are empty
-    if not allowances_data:
-        allowances_data = [
-            ('meal_allowance', float(employee.get('meal_allowance', 0))),
-            ('transportation_allowance', float(employee.get('transportation_allowance', 0))),
-            ('medical_allowance', float(employee.get('medical_allowance', 0))),
-        ]
-    if not taxes_data:
-        taxes_data = [
-            ('retirement_insurance', float(employee.get('retirement_insurance', 0))),
-            ('professional_tax', float(employee.get('tax', 0))),
-        ]
+    allowances_data = []
+    taxes_data = []
+    
+    for f in financials:
+        if f['component_code'] == 1:
+            allowances_data.append((f['component_name'], float(f['amount'])))
+        elif f['component_code'] == 2:
+            taxes_data.append((f['component_name'], float(f['amount'])))
 
     gross_salary = basic + sum(a for _, a in allowances_data)
     total_deductions = sum(t for _, t in taxes_data)
@@ -1148,7 +1188,6 @@ def data_dictionary_page():
     search_col = request.args.get('search_col', '').strip()
     search_val = request.args.get('search_val', '').strip()
 
-    # Whitelist of allowed search columns (same as index)
     allowed_cols = {
         'emp_name': 'Employee Name',
         'emp_id': 'Employee ID',
@@ -1157,25 +1196,15 @@ def data_dictionary_page():
         'gender': 'Gender',
         'education': 'Education',
         'basic_salary': 'Basic Salary',
-        'meal_allowance': 'Meal Allowance',
-        'transportation_allowance': 'Transport Allowance',
-        'medical_allowance': 'Medical Allowance',
-        'allowances': 'Allowances Total',
-        'retirement_insurance': 'Retirement Insurance',
-        'tax': 'Professional Tax',
-        'deductions': 'Deductions Total',
         'title': 'Designation/Title',
-        'directorate': 'Directorate',
         'department': 'Department',
         'bank_name': 'Bank Name',
         'bank_account_num': 'Bank Account #',
-        'joining_year': 'Joining Year',
-        'city': 'City',
+        'ifsc_code': 'IFSC Code',
+        'posting_location': 'Location',
         'payment_tier': 'Payment Tier',
-        'ever_benched': 'Ever Benched',
-        'experience_in_current_domain': 'Experience (Years)',
-        'leave_or_not': 'Leave or Not',
-        'date': 'Joining Date'
+        'date_of_birth': 'Date of Birth',
+        'joining_date': 'Joining Date'
     }
 
     if search_col not in allowed_cols:
@@ -1190,77 +1219,72 @@ def data_dictionary_page():
                 e.*,
                 b.bank_name,
                 b.bank_account_num,
-                COALESCE(a.meal_allowance, 0) AS meal_allowance,
-                COALESCE(a.transportation_allowance, 0) AS transportation_allowance,
-                COALESCE(a.medical_allowance, 0) AS medical_allowance,
-                COALESCE(t.retirement_insurance, 0) AS retirement_insurance,
-                COALESCE(t.tax, 0) AS tax
+                b.ifsc_code,
+                COALESCE(a.total_allowances, 0) AS allowances,
+                COALESCE(d.total_deductions, 0) AS deductions
             FROM employees e
             LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
             LEFT JOIN (
-                SELECT 
-                    emp_id,
-                    SUM(CASE WHEN allowance_type = 'meal_allowance' THEN amount ELSE 0 END) AS meal_allowance,
-                    SUM(CASE WHEN allowance_type = 'transportation_allowance' THEN amount ELSE 0 END) AS transportation_allowance,
-                    SUM(CASE WHEN allowance_type = 'medical_allowance' THEN amount ELSE 0 END) AS medical_allowance
-                FROM employee_allowances
+                SELECT emp_id, SUM(amount) AS total_allowances 
+                FROM employee_financial_components 
+                WHERE component_code = 1 
                 GROUP BY emp_id
             ) a ON e.emp_id = a.emp_id
             LEFT JOIN (
-                SELECT 
-                    emp_id,
-                    SUM(CASE WHEN tax_type = 'retirement_insurance' THEN amount ELSE 0 END) AS retirement_insurance,
-                    SUM(CASE WHEN tax_type = 'professional_tax' THEN amount ELSE 0 END) AS tax
-                FROM employee_taxes
+                SELECT emp_id, SUM(amount) AS total_deductions 
+                FROM employee_financial_components 
+                WHERE component_code = 2 
                 GROUP BY emp_id
-            ) t ON e.emp_id = t.emp_id
+            ) d ON e.emp_id = d.emp_id
         ) AS emp_details WHERE 1=1
     """
 
     if search_col and search_val:
-        query = base_query + f" AND `{search_col}` LIKE %s ORDER BY date DESC"
+        query = base_query + f" AND `{search_col}` LIKE %s ORDER BY joining_date DESC"
         cursor.execute(query, (f"%{search_val}%",))
     else:
-        query = base_query + " ORDER BY date DESC"
+        query = base_query + " ORDER BY joining_date DESC"
         cursor.execute(query)
     preview_data = cursor.fetchall()
     conn.close()
 
-    # Metadata definitions — normalized 4-table schema
+    # Metadata definitions — normalized
     metadata = [
-        # TABLE: employees
-        {"table": "employees", "column": "id",                          "type": "int AUTO_INCREMENT",   "description": "Internal unique identifier (Primary Key)"},
-        {"table": "employees", "column": "emp_id",                      "type": "varchar(50) UNIQUE",   "description": "Unique business Employee ID (e.g. EMP-2024-1001)"},
-        {"table": "employees", "column": "emp_name",                    "type": "varchar(100)",         "description": "Full legal name of the employee"},
-        {"table": "employees", "column": "email",                       "type": "varchar(100)",         "description": "Corporate email address (unique)"},
-        {"table": "employees", "column": "date",                        "type": "date",                 "description": "Date of joining the organization"},
-        {"table": "employees", "column": "basic_salary",                "type": "decimal(10,2)",        "description": "Base monthly salary — varies per employee even for same role (±20%)"},
-        {"table": "employees", "column": "allowances",                  "type": "decimal(10,2)",        "description": "Calculated total from employee_allowances table (auto-updated)"},
-        {"table": "employees", "column": "deductions",                  "type": "decimal(10,2)",        "description": "Calculated total from employee_taxes table (auto-updated)"},
-        {"table": "employees", "column": "age",                         "type": "int",                  "description": "Age of the employee in years"},
-        {"table": "employees", "column": "gender",                      "type": "varchar(20)",          "description": "Gender identification (Male / Female / Other)"},
-        {"table": "employees", "column": "education",                   "type": "varchar(100)",         "description": "Highest education qualification"},
-        {"table": "employees", "column": "title",                       "type": "varchar(100)",         "description": "Job designation / position title"},
-        {"table": "employees", "column": "directorate",                 "type": "varchar(100)",         "description": "Organizational division (e.g. Engineering, Operations)"},
-        {"table": "employees", "column": "department",                  "type": "varchar(100)",         "description": "Specific department within the directorate"},
-        {"table": "employees", "column": "joining_year",                "type": "int",                  "description": "Year of joining the organization"},
-        {"table": "employees", "column": "city",                        "type": "varchar(100)",         "description": "City of residence / employment"},
-        {"table": "employees", "column": "payment_tier",                "type": "int",                  "description": "Salary tier: 1=Executive (≥80K), 2=Professional (≥50K), 3=Associate (<50K)"},
-        {"table": "employees", "column": "ever_benched",                "type": "varchar(10)",          "description": "Whether the employee was ever benched (Yes/No)"},
-        {"table": "employees", "column": "experience_in_current_domain","type": "int",                  "description": "Years of experience in current technology domain"},
-        {"table": "employees", "column": "leave_or_not",                "type": "int",                  "description": "Leave status: 0=Active, 1=On Leave, 2=Medical, 3=Parental, 4=Unpaid, 5=Resigned"},
-        # TABLE: employee_bank_details (1-to-1)
-        {"table": "employee_bank_details", "column": "emp_id",          "type": "varchar(50) FK",       "description": "References employees.emp_id — one bank record per employee"},
-        {"table": "employee_bank_details", "column": "bank_name",       "type": "varchar(100)",         "description": "Name of the bank used for salary credit"},
-        {"table": "employee_bank_details", "column": "bank_account_num","type": "varchar(50)",          "description": "Unique bank account number — generated per employee"},
-        # TABLE: employee_allowances (many-to-1)
-        {"table": "employee_allowances", "column": "emp_id",            "type": "varchar(50) FK",       "description": "References employees.emp_id — multiple rows per employee"},
-        {"table": "employee_allowances", "column": "allowance_type",    "type": "varchar(100)",         "description": "Type of allowance (meal_allowance, transportation_allowance, wife_allowance, etc.)"},
-        {"table": "employee_allowances", "column": "amount",            "type": "decimal(10,2)",        "description": "Monthly amount for this specific allowance type"},
-        # TABLE: employee_taxes (many-to-1)
-        {"table": "employee_taxes", "column": "emp_id",                 "type": "varchar(50) FK",       "description": "References employees.emp_id — multiple rows per employee"},
-        {"table": "employee_taxes", "column": "tax_type",               "type": "varchar(100)",         "description": "Type of deduction (retirement_insurance, professional_tax, income_tax, etc.)"},
-        {"table": "employee_taxes", "column": "amount",                 "type": "decimal(10,2)",        "description": "Monthly deduction amount for this specific tax type"},
+        {"table": "employees", "column": "id", "type": "int AUTO_INCREMENT", "description": "Internal unique identifier (Primary Key)"},
+        {"table": "employees", "column": "emp_id", "type": "varchar(50) UNIQUE", "description": "Unique business Employee ID (e.g. EMP-2024-1001)"},
+        {"table": "employees", "column": "emp_name", "type": "varchar(100)", "description": "Full legal name of the employee"},
+        {"table": "employees", "column": "email", "type": "varchar(100)", "description": "Corporate email address (unique)"},
+        {"table": "employees", "column": "date_of_birth", "type": "date", "description": "Date of birth of the employee"},
+        {"table": "employees", "column": "joining_date", "type": "date", "description": "Date of joining the organization"},
+        {"table": "employees", "column": "basic_salary", "type": "decimal(12,2)", "description": "Base monthly salary"},
+        {"table": "employees", "column": "age", "type": "int", "description": "Age of the employee in years"},
+        {"table": "employees", "column": "gender", "type": "varchar(20)", "description": "Gender identification (Male / Female / Other)"},
+        {"table": "employees", "column": "education", "type": "int", "description": "0=High School, 1=Diploma, 2=Bachelor's, 3=Master's, 4=PhD"},
+        {"table": "employees", "column": "title", "type": "varchar(100)", "description": "Job designation / position title"},
+        {"table": "employees", "column": "department", "type": "varchar(100)", "description": "Specific department within the company"},
+        {"table": "employees", "column": "posting_location", "type": "varchar(100)", "description": "City of employment"},
+        {"table": "employees", "column": "payment_tier", "type": "int", "description": "Salary tier: 1=Executive, 2=Professional, 3=Associate"},
+        
+        {"table": "employee_bank_details", "column": "emp_id", "type": "varchar(50) FK", "description": "References employees.emp_id"},
+        {"table": "employee_bank_details", "column": "bank_name", "type": "varchar(100)", "description": "Name of the bank used for salary credit"},
+        {"table": "employee_bank_details", "column": "bank_account_num", "type": "varchar(50)", "description": "Unique bank account number"},
+        {"table": "employee_bank_details", "column": "ifsc_code", "type": "varchar(20)", "description": "Bank IFSC Code"},
+        
+        {"table": "employee_financial_components", "column": "emp_id", "type": "varchar(50) FK", "description": "References employees.emp_id"},
+        {"table": "employee_financial_components", "column": "component_name", "type": "varchar(100)", "description": "Name of the component (e.g., Meal Allowance)"},
+        {"table": "employee_financial_components", "column": "component_code", "type": "tinyint", "description": "1 for Allowance, 2 for Deduction"},
+        {"table": "employee_financial_components", "column": "amount", "type": "decimal(12,2)", "description": "Monetary value"},
+
+        {"table": "payslip_master", "column": "payslip_id", "type": "int PK", "description": "Primary key for payslips"},
+        {"table": "payslip_master", "column": "emp_id", "type": "varchar(50) FK", "description": "References employees.emp_id"},
+        {"table": "payslip_master", "column": "basic_salary", "type": "decimal(12,2)", "description": "Basic Salary amount"},
+        {"table": "payslip_master", "column": "total_allowance", "type": "decimal(12,2)", "description": "Total allowance sum"},
+        {"table": "payslip_master", "column": "total_deduction", "type": "decimal(12,2)", "description": "Total deduction sum"},
+        {"table": "payslip_master", "column": "final_in_hand_salary", "type": "decimal(12,2)", "description": "Net pay"},
+        {"table": "payslip_master", "column": "generated_on", "type": "datetime", "description": "When the payslip was generated"},
+        
+        {"table": "employee_holidays", "column": "emp_id", "type": "varchar(50) FK", "description": "References employees.emp_id"},
+        {"table": "employee_holidays", "column": "holiday_code", "type": "tinyint", "description": "0=Present, 1=Casual Leave, 2=Sick Leave, 3=Paid Holiday, 4=Absent"},
     ]
     
     return render_template('data_dictionary.html', preview_data=preview_data, metadata=metadata,
@@ -1272,6 +1296,449 @@ def download_report(filename):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     return send_from_directory(base_dir, filename, as_attachment=True)
 
+
+from flask import jsonify
+from datetime import datetime
+
+@app.route('/api/employee/<emp_id>')
+def api_get_employee(emp_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Get employee basic + bank details
+            cursor.execute('''
+                SELECT e.*, b.bank_name, b.bank_account_num, b.ifsc_code 
+                FROM employees e
+                LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
+                WHERE e.emp_id = %s
+            ''', (emp_id,))
+            emp = cursor.fetchone()
+            
+            if not emp:
+                return jsonify({"error": "Not found"}), 404
+            
+            # Generate dummy phone number if missing
+            import random
+            if not emp.get('phone_number'):
+                random.seed(emp_id)
+                emp['phone_number'] = "+91-" + "".join([str(random.randint(0, 9)) for _ in range(10)])
+                
+            # Generate dummy bank details if missing
+            if not emp.get('bank_name'):
+                random.seed(emp_id + "bank")
+                banks = ["HDFC Bank", "ICICI Bank", "State Bank of India", "Axis Bank", "Kotak Mahindra"]
+                b_name = random.choice(banks)
+                emp['bank_name'] = b_name
+                emp['bank_account_num'] = "".join([str(random.randint(0, 9)) for _ in range(12)])
+                emp['ifsc_code'] = b_name[:4].upper().replace(" ", "") + "0" + "".join([str(random.randint(0, 9)) for _ in range(6)])
+            # Convert date objects to string for JSON serialization
+            if emp.get('date_of_birth'):
+                emp['date_of_birth'] = str(emp['date_of_birth'])
+            if emp.get('joining_date'):
+                emp['joining_date'] = str(emp['joining_date'])
+                
+            # Get financial components
+            cursor.execute('SELECT * FROM employee_financial_components WHERE emp_id = %s', (emp_id,))
+            components = cursor.fetchall()
+            
+            return jsonify({
+                "employee": emp,
+                "components": components
+            })
+    finally:
+        conn.close()
+
+@app.route('/payslip_builder', methods=['GET', 'POST'])
+def payslip_builder():
+    """Interactive UI for generating and customizing a Payslip in real-time."""
+    if request.method == 'POST':
+        # Save the generated payslip to payslip_master
+        emp_id = request.form.get('emp_id')
+        basic_salary = float(request.form.get('basic_salary') or 0)
+        total_allowance = float(request.form.get('total_allowance') or 0)
+        total_deduction = float(request.form.get('total_deduction') or 0)
+        final_in_hand_salary = float(request.form.get('final_in_hand_salary') or 0)
+        
+        # Auto-generate month and year from current time
+        now = datetime.now()
+        salary_month = now.strftime('%B')
+        salary_year = now.year
+        
+        # Dynamic components
+        comp_names = request.form.getlist('component_name[]')
+        comp_codes = request.form.getlist('component_code[]')
+        comp_amounts = request.form.getlist('component_amount[]')
+        
+        if emp_id:
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cursor:
+                    # Auto-generate payslip number
+                    cursor.execute("SELECT COUNT(*) as count FROM payslip_master")
+                    count = cursor.fetchone()['count'] + 1
+                    payslip_no = f"PSL-{salary_year}-{str(count).zfill(5)}"
+                    
+                    # Insert into payslip_master
+                    cursor.execute(
+                        """INSERT INTO payslip_master 
+                           (payslip_no, emp_id, salary_month, salary_year, basic_salary, total_allowance, total_deduction, final_in_hand_salary) 
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (payslip_no, emp_id, salary_month, salary_year, basic_salary, total_allowance, total_deduction, final_in_hand_salary)
+                    )
+                    
+                    # Delete existing components to replace them with the new generated ones
+                    cursor.execute("DELETE FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+                    
+                    # Insert dynamic components into employee_financial_components
+                    for i in range(len(comp_names)):
+                        name = comp_names[i].strip()
+                        code = int(comp_codes[i]) if i < len(comp_codes) else 1
+                        amt = float(comp_amounts[i]) if i < len(comp_amounts) else 0.0
+                        if name:
+                            cursor.execute(
+                                """INSERT INTO employee_financial_components
+                                (emp_id, component_name, component_code, amount)
+                                VALUES (%s, %s, %s, %s)""",
+                                (emp_id, name, code, amt)
+                            )
+                conn.commit()
+                flash(f"Payslip {payslip_no} saved successfully!", "success")
+            except Exception as e:
+                flash(f"Error saving payslip: {str(e)}", "danger")
+            finally:
+                conn.close()
+        
+        return redirect(url_for('payslip_builder'))
+        
+    # GET request: fetch all employees for the dropdown
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT emp_id, emp_name, title FROM employees ORDER BY emp_name")
+            employees = cursor.fetchall()
+    finally:
+        conn.close()
+        
+    selected_emp_id = request.args.get('selected_emp_id', '')
+        
+    return render_template('payslip_builder.html', employees=employees, selected_emp_id=selected_emp_id)
+
+
+import io
+from flask import send_file, jsonify
+
+def find_column(columns_clean, df_cols, synonyms):
+    for idx, col in enumerate(columns_clean):
+        if col in synonyms:
+            return df_cols[idx]
+    return None
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'csv_file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+        
+    file = request.files['csv_file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+        
+    ext = file.filename.split('.')[-1].lower()
+    if ext not in ['csv', 'xlsx', 'xls']:
+        return jsonify({"error": "Invalid file type. Only CSV and Excel files are allowed."}), 400
+        
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    file.save(file_path)
+    
+    try:
+        if ext == 'csv':
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+            
+        df_cols = list(df.columns)
+        columns_clean = [str(c).strip().lower() for c in df_cols]
+        
+        id_col = find_column(columns_clean, df_cols, ['emp_id', 'employee id', 'employee_id', 'id', 'empid'])
+        name_col = find_column(columns_clean, df_cols, ['emp_name', 'employee name', 'employee_name', 'name', 'full name'])
+        email_col = find_column(columns_clean, df_cols, ['email', 'email address', 'email_address', 'mail'])
+        date_col = find_column(columns_clean, df_cols, ['date_of_birth', 'dob'])
+        joining_col = find_column(columns_clean, df_cols, ['joining_date', 'doj', 'joining date'])
+        basic_col = find_column(columns_clean, df_cols, ['basic_salary', 'basic salary', 'basic', 'salary'])
+        
+        gender_col = find_column(columns_clean, df_cols, ['gender', 'sex'])
+        age_col = find_column(columns_clean, df_cols, ['age'])
+        education_col = find_column(columns_clean, df_cols, ['education', 'degree'])
+        
+        title_col = find_column(columns_clean, df_cols, ['title', 'designation', 'role'])
+        department_col = find_column(columns_clean, df_cols, ['department', 'dept'])
+        posting_col = find_column(columns_clean, df_cols, ['posting_location', 'location', 'city'])
+        tier_col = find_column(columns_clean, df_cols, ['payment_tier', 'tier'])
+        
+        bank_name_col = find_column(columns_clean, df_cols, ['bank_name', 'bank'])
+        bank_acc_col = find_column(columns_clean, df_cols, ['bank_account_num', 'account number', 'acc_num'])
+        ifsc_col = find_column(columns_clean, df_cols, ['ifsc_code', 'ifsc'])
+        
+        if not (id_col and name_col and email_col):
+            return jsonify({"error": f"Missing required columns (Employee ID, Name, Email). Found: {df_cols}"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        dup_handling = request.form.get('duplicate_handling', 'skip')
+        success_count = 0
+        error_rows = []
+        
+        for idx, row in df.iterrows():
+            emp_id = str(row[id_col]).strip()
+            emp_name = str(row[name_col]).strip()
+            email = str(row[email_col]).strip()
+            
+            if not emp_id or emp_id == 'nan':
+                error_rows.append({"Row": idx+2, "Error": "Missing Employee ID"})
+                continue
+                
+            if not email or '@' not in email:
+                error_rows.append({"Row": idx+2, "Error": "Invalid Email"})
+                continue
+                
+            try:
+                date_val = pd.to_datetime(row[date_col]).strftime('%Y-%m-%d') if date_col else '1990-01-01'
+            except:
+                date_val = '1990-01-01'
+            try:
+                joining_val = pd.to_datetime(row[joining_col]).strftime('%Y-%m-%d') if joining_col else '2020-01-01'
+            except:
+                joining_val = '2020-01-01'
+                
+            basic_val = float(row[basic_col]) if basic_col and not pd.isna(row[basic_col]) else 0.0
+            age_val = int(row[age_col]) if age_col and not pd.isna(row[age_col]) else 30
+            gender_val = str(row[gender_col]).strip().capitalize() if gender_col and not pd.isna(row[gender_col]) else 'Male'
+            
+            education_val = 2
+            if education_col and not pd.isna(row[education_col]):
+                try: education_val = int(row[education_col])
+                except: pass
+                    
+            title_val = str(row[title_col]).strip() if title_col and not pd.isna(row[title_col]) else 'Employee'
+            department_val = str(row[department_col]).strip() if department_col and not pd.isna(row[department_col]) else 'General'
+            posting_val = str(row[posting_col]).strip() if posting_col and not pd.isna(row[posting_col]) else 'Head Office'
+            payment_tier_val = int(row[tier_col]) if tier_col and not pd.isna(row[tier_col]) else 3
+            
+            seed = idx + 1000
+            dyn_basic, dyn_bank, dyn_acc, dyn_ifsc, dyn_allowances, dyn_taxes = get_dynamic_payroll_and_bank(
+                basic_val if basic_val > 0 else 45000.0, title_val, department_val, seed
+            )
+            
+            if basic_val <= 0: basic_val = dyn_basic
+            
+            b_name = str(row[bank_name_col]).strip() if bank_name_col and not pd.isna(row[bank_name_col]) else dyn_bank
+            b_acc = str(row[bank_acc_col]).strip() if bank_acc_col and not pd.isna(row[bank_acc_col]) else dyn_acc
+            ifsc = str(row[ifsc_col]).strip() if ifsc_col and not pd.isna(row[ifsc_col]) else dyn_ifsc
+            
+            try:
+                # Check if exists
+                cursor.execute('SELECT id FROM employees WHERE emp_id = %s', (emp_id,))
+                exists = cursor.fetchone()
+                
+                if exists:
+                    if dup_handling in ['skip', 'insert_new']:
+                        error_rows.append({"Row": idx+2, "Error": f"Skipped Duplicate Employee ID: {emp_id}"})
+                        continue
+                    elif dup_handling == 'update':
+                        cursor.execute(
+                            """UPDATE employees SET emp_name=%s, email=%s, date_of_birth=%s, joining_date=%s, basic_salary=%s,
+                            age=%s, gender=%s, education=%s, title=%s, department=%s, posting_location=%s, payment_tier=%s
+                            WHERE emp_id=%s""",
+                            (emp_name, email, date_val, joining_val, basic_val, age_val, gender_val, education_val, title_val, department_val, posting_val, payment_tier_val, emp_id)
+                        )
+                        cursor.execute("UPDATE employee_bank_details SET bank_name=%s, bank_account_num=%s, ifsc_code=%s WHERE emp_id=%s", (b_name, b_acc, ifsc, emp_id))
+                        success_count += 1
+                        continue
+                
+                # Insert New
+                cursor.execute(
+                    """INSERT INTO employees (
+                        emp_id, emp_name, email, date_of_birth, joining_date, basic_salary,
+                        age, gender, education, title, department, posting_location, payment_tier
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (emp_id, emp_name, email, date_val, joining_val, basic_val, age_val, gender_val, education_val, title_val, department_val, posting_val, payment_tier_val)
+                )
+                cursor.execute(
+                    """INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) 
+                    VALUES (%s,%s,%s,%s)""", (emp_id, b_name, b_acc, ifsc)
+                )
+                cursor.execute("""INSERT IGNORE INTO employee_holidays (emp_id, holiday_code) VALUES (%s, 0)""", (emp_id,))
+                
+                # Insert dynamic allowances and deductions if the CSV didn't have them
+                for atype, amt in dyn_allowances:
+                    cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,1,%s)", (emp_id, atype, amt))
+                for ttype, amt in dyn_taxes:
+                    cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,2,%s)", (emp_id, ttype, amt))
+                    
+                success_count += 1
+            except pymysql.err.IntegrityError:
+                error_rows.append({"Row": idx+2, "Error": f"Duplicate Error: {emp_id}"})
+            except Exception as ex:
+                error_rows.append({"Row": idx+2, "Error": str(ex)})
+                
+        conn.commit()
+        conn.close()
+        
+        error_file_url = ""
+        if error_rows:
+            error_df = pd.DataFrame(error_rows)
+            from datetime import datetime
+            err_filename = f"error_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+            error_df.to_csv(os.path.join(app.config['UPLOAD_FOLDER'], err_filename), index=False)
+            error_file_url = url_for('download_report', filename=f"uploads/{err_filename}")
+            
+        return jsonify({
+            "success": True,
+            "success_count": success_count,
+            "error_count": len(error_rows),
+            "error_file": error_file_url
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/export/employees')
+def export_employees():
+    fmt = request.args.get('format', 'csv')
+    
+    # Just return the empty template for importing
+    columns = [
+        'emp_id', 'emp_name', 'email', 'phone_number', 'date_of_birth', 
+        'joining_date', 'basic_salary', 'age', 'gender', 'education', 
+        'title', 'department', 'posting_location', 'payment_tier'
+    ]
+    import pandas as pd
+    import io
+    df = pd.DataFrame(columns=columns)
+    
+    if fmt == 'xlsx':
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Employees')
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name='employees_import_template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    else:
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        return send_file(io.BytesIO(output.getvalue().encode()), as_attachment=True, download_name='employees_import_template.csv', mimetype='text/csv')
+
+@app.route('/export/payslips')
+def export_payslips():
+    fmt = request.args.get('format', 'csv')
+    conn = get_db_connection()
+    df = pd.read_sql('''
+        SELECT p.payslip_no, p.emp_id, e.emp_name, p.salary_month, p.salary_year,
+               p.basic_salary, p.total_allowance, p.total_deduction, p.final_in_hand_salary, p.generated_on
+        FROM payslip_master p
+        JOIN employees e ON p.emp_id = e.emp_id
+        ORDER BY p.generated_on DESC
+    ''', conn)
+    conn.close()
+    
+    if fmt == 'xlsx':
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Payslips')
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name='payslips_export.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    else:
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        return send_file(io.BytesIO(output.getvalue().encode()), as_attachment=True, download_name='payslips_export.csv', mimetype='text/csv')
+
+@app.route('/data_dictionary')
+def data_dictionary():
+    return render_template('data_dictionary.html')
+
+@app.route('/financial_master')
+def financial_master():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT e.emp_id, e.emp_name, e.basic_salary, 
+               b.bank_name, b.bank_account_num, b.ifsc_code
+        FROM employees e
+        LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
+        ORDER BY e.emp_id
+    """)
+    employees_data = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM employee_financial_components')
+    all_components = cursor.fetchall()
+    conn.close()
+    
+    emp_components = {}
+    for comp in all_components:
+        eid = comp['emp_id']
+        if eid not in emp_components:
+            emp_components[eid] = []
+        emp_components[eid].append(comp)
+        
+    return render_template('financial_master.html', employees=employees_data, emp_components=emp_components)
+
+@app.route('/update_employee_financials', methods=['POST'])
+def update_employee_financials():
+    emp_id = request.form.get('emp_id')
+    bank_name = request.form.get('bank_name')
+    bank_account_num = request.form.get('bank_account_num')
+    ifsc_code = request.form.get('ifsc_code')
+    basic_salary = request.form.get('basic_salary', 0.0)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("UPDATE employees SET basic_salary=%s WHERE emp_id=%s", (basic_salary, emp_id))
+        
+        cursor.execute("SELECT id FROM employee_bank_details WHERE emp_id=%s", (emp_id,))
+        if cursor.fetchone():
+            cursor.execute("""
+                UPDATE employee_bank_details 
+                SET bank_name=%s, bank_account_num=%s, ifsc_code=%s 
+                WHERE emp_id=%s
+            """, (bank_name, bank_account_num, ifsc_code, emp_id))
+        else:
+            cursor.execute("""
+                INSERT INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) 
+                VALUES (%s, %s, %s, %s)
+            """, (emp_id, bank_name, bank_account_num, ifsc_code))
+            
+        cursor.execute("DELETE FROM employee_financial_components WHERE emp_id=%s", (emp_id,))
+        
+        comp_names = request.form.getlist('component_name[]')
+        comp_codes = request.form.getlist('component_code[]')
+        comp_amounts = request.form.getlist('component_amount[]')
+        
+        for name, code, amt in zip(comp_names, comp_codes, comp_amounts):
+            if name.strip() and amt.strip():
+                cursor.execute("""
+                    INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount)
+                    VALUES (%s, %s, %s, %s)
+                """, (emp_id, name.strip(), int(code), float(amt)))
+                
+        conn.commit()
+        flash(f"Financial details updated for {emp_id}.", "success")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Error updating financials: {str(e)}", "danger")
+    finally:
+        conn.close()
+        
+    return redirect(url_for('financial_master'))
+
+
 if __name__ == '__main__':
-    init_db()
+    # Only run database initialization in the main worker process when Flask's reloader is enabled
+    # to avoid race conditions and deadlocks between parent and child processes.
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+        init_db()
     app.run(debug=True, host='0.0.0.0', port=5000)
