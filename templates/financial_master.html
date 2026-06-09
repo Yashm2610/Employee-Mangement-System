@@ -144,6 +144,9 @@
                             ₹{{ "{:,.2f}".format((emp.basic_salary|float) + totals.allowance - totals.deduction) }}
                         </td>
                         <td class="text-end pe-4">
+                            <a href="{{ url_for('payslip_builder', selected_emp_id=emp.emp_id) }}" class="btn btn-sm btn-outline-success me-2" title="Prepare Payroll / Payslip">
+                                <i class="bi bi-receipt me-1"></i> Generate Payslip
+                            </a>
                             <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('{{ emp.emp_id }}', '{{ emp.emp_name|replace("'", "\\'") }}', '{{ emp.bank_name|default("") }}', '{{ emp.bank_account_num|default("") }}', '{{ emp.ifsc_code|default("") }}', '{{ emp.basic_salary }}')" type="button">
                                 <i class="bi bi-pencil-square me-1"></i> Edit Financials
                             </button>

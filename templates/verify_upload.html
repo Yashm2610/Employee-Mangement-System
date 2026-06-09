@@ -1,0 +1,347 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid mb-5 pb-5">
+    <!-- Header -->
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h3 class="fw-bold mb-1"><i class="bi bi-shield-check text-primary me-2"></i>Enterprise Data Verification</h3>
+            <p class="text-muted mb-0">Please review and select the records you wish to import.</p>
+        </div>
+        <div class="col-auto">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Cancel</a>
+        </div>
+    </div>
+
+    <!-- Strategy & Bulk Actions -->
+    <div class="row mb-4">
+        <div class="col-lg-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <div class="row align-items-center">
+                        <div class="col-md-5 border-end">
+                            <h6 class="fw-bold mb-3 text-dark">Duplicate Resolution Strategy:</h6>
+                            <div class="d-flex flex-column gap-2">
+                                <div class="form-check">
+                                    <input class="form-check-input strategy-radio" type="radio" name="dup_strategy" id="stratSkip" value="skip" checked>
+                                    <label class="form-check-label" for="stratSkip"><strong>Skip Existing Records</strong> (Insert only NEW rows)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input strategy-radio" type="radio" name="dup_strategy" id="stratUpdate" value="update">
+                                    <label class="form-check-label" for="stratUpdate"><strong>Update Existing Records</strong> (Update EXISTING rows, Insert NEW rows)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input strategy-radio" type="radio" name="dup_strategy" id="stratInsert" value="insert_new">
+                                    <label class="form-check-label" for="stratInsert"><strong>Insert New Records Only</strong> (Ignore duplicates, Insert NEW rows)</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-7 ps-md-4">
+                            <h6 class="fw-bold mb-3 text-dark">Bulk Selection Tools:</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btn-sel-all">Select All</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-unsel-all">Unselect All</button>
+                                <button type="button" class="btn btn-sm btn-outline-success" id="btn-sel-new">Select New Records</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning" id="btn-sel-exist">Select Existing Records</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" id="btn-sel-inv">Select Invalid Records</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Table & Comparison Drawer -->
+    <div class="row">
+        <!-- Table Column -->
+        <div class="col-lg-12 transition-col" id="table-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 60vh; overflow-y: auto;">
+                        <table class="table table-hover align-middle mb-0" id="verificationTable">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th scope="col" class="text-center" style="width: 50px;">
+                                        <input class="form-check-input" type="checkbox" id="masterCheckbox">
+                                    </th>
+                                    <th scope="col">Employee ID</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Email</th>
+                                    <th scope="col" class="text-center">Status</th>
+                                    <th scope="col" class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in records %}
+                                <tr class="record-row" data-id="{{ r.id }}" data-status="{{ r.status }}" data-emp-id="{{ r.employee_id }}">
+                                    <td class="text-center">
+                                        <input class="form-check-input row-checkbox" type="checkbox" value="{{ r.id }}">
+                                    </td>
+                                    <td class="fw-semibold font-monospace text-muted">{{ r.employee_id }}</td>
+                                    <td class="fw-bold">{{ r.name }}</td>
+                                    <td>{{ r.email }}</td>
+                                    <td class="text-center">
+                                        {% if r.status == 'NEW' %}
+                                            <span class="badge bg-success rounded-pill px-3 py-2">NEW</span>
+                                        {% elif r.status == 'EXISTING' %}
+                                            <span class="badge bg-warning text-dark rounded-pill px-3 py-2">EXISTING</span>
+                                        {% else %}
+                                            <span class="badge bg-danger rounded-pill px-3 py-2">INVALID</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if r.status == 'EXISTING' %}
+                                        <button class="btn btn-sm btn-light compare-btn" 
+                                                data-raw="{{ r.raw_json | e }}" 
+                                                {% if r.employee_id in existing_db %}
+                                                data-db-name="{{ existing_db[r.employee_id].emp_name }}"
+                                                data-db-email="{{ existing_db[r.employee_id].email }}"
+                                                data-db-dept="{{ existing_db[r.employee_id].department_name }}"
+                                                data-db-salary="{{ existing_db[r.employee_id].basic_salary }}"
+                                                {% endif %}>
+                                            <i class="bi bi-layout-split me-1"></i> Compare
+                                        </button>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison Drawer (Hidden by default) -->
+        <div class="col-lg-4 d-none transition-col" id="compare-col">
+            <div class="card border-0 shadow-sm border-start border-warning border-4 h-100">
+                <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title fw-bold mb-0 text-warning text-darken"><i class="bi bi-arrow-left-right me-2"></i>Record Comparison</h5>
+                    <button type="button" class="btn-close" id="close-compare-btn"></button>
+                </div>
+                <div class="card-body bg-light rounded-bottom p-4">
+                    <p class="text-muted small mb-4">Comparing Database values against the currently Uploaded file.</p>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-uppercase text-muted">Name</label>
+                        <div class="d-flex justify-content-between align-items-center p-2 border rounded bg-white">
+                            <div class="w-50 border-end pe-2">
+                                <small class="d-block text-muted">Database</small>
+                                <span class="fw-semibold text-dark" id="cmp-db-name">-</span>
+                            </div>
+                            <div class="w-50 ps-2">
+                                <small class="d-block text-muted">Uploaded</small>
+                                <span class="fw-semibold text-primary" id="cmp-up-name">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-uppercase text-muted">Email</label>
+                        <div class="d-flex justify-content-between align-items-center p-2 border rounded bg-white">
+                            <div class="w-50 border-end pe-2 text-truncate">
+                                <small class="d-block text-muted">Database</small>
+                                <span class="fw-semibold text-dark fs-7" id="cmp-db-email">-</span>
+                            </div>
+                            <div class="w-50 ps-2 text-truncate">
+                                <small class="d-block text-muted">Uploaded</small>
+                                <span class="fw-semibold text-primary fs-7" id="cmp-up-email">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-uppercase text-muted">Department</label>
+                        <div class="d-flex justify-content-between align-items-center p-2 border rounded bg-white">
+                            <div class="w-50 border-end pe-2">
+                                <small class="d-block text-muted">Database</small>
+                                <span class="fw-semibold text-dark" id="cmp-db-dept">-</span>
+                            </div>
+                            <div class="w-50 ps-2">
+                                <small class="d-block text-muted">Uploaded</small>
+                                <span class="fw-semibold text-primary" id="cmp-up-dept">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sticky Confirmation Bar -->
+<div class="fixed-bottom bg-white border-top shadow-lg p-3" style="z-index: 1030;">
+    <div class="container-fluid d-flex justify-content-between align-items-center">
+        <div class="d-flex gap-4 align-items-center">
+            <div>
+                <span class="text-muted small d-block">Total Records</span>
+                <strong class="fs-5" id="sum-total">0</strong>
+            </div>
+            <div class="border-start ps-4">
+                <span class="text-muted small d-block">Selected</span>
+                <strong class="fs-5 text-primary" id="sum-selected">0</strong>
+            </div>
+            <div class="border-start ps-4">
+                <span class="text-success small d-block"><i class="bi bi-circle-fill me-1"></i>New</span>
+                <strong class="fs-5" id="sum-new">0</strong>
+            </div>
+            <div class="border-start ps-4">
+                <span class="text-warning small d-block"><i class="bi bi-circle-fill me-1"></i>Existing</span>
+                <strong class="fs-5" id="sum-exist">0</strong>
+            </div>
+            <div class="border-start ps-4">
+                <span class="text-danger small d-block"><i class="bi bi-circle-fill me-1"></i>Invalid</span>
+                <strong class="fs-5" id="sum-inv">0</strong>
+            </div>
+        </div>
+        <div>
+            <button class="btn btn-dark btn-lg px-5 fw-bold" id="final-confirm-btn">
+                <i class="bi bi-cloud-check me-2"></i>Confirm Upload
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+.transition-col { transition: all 0.3s ease-in-out; }
+.text-warning.text-darken { color: #cc8b00 !important; }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    const masterCb = document.getElementById('masterCheckbox');
+    
+    // Summary Counters
+    const sumTotal = document.getElementById('sum-total');
+    const sumSelected = document.getElementById('sum-selected');
+    const sumNew = document.getElementById('sum-new');
+    const sumExist = document.getElementById('sum-exist');
+    const sumInv = document.getElementById('sum-inv');
+    
+    sumTotal.innerText = checkboxes.length;
+    
+    function updateSummary() {
+        let sel = 0, n = 0, e = 0, inv = 0;
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                sel++;
+                const status = cb.closest('.record-row').getAttribute('data-status');
+                if (status === 'NEW') n++;
+                else if (status === 'EXISTING') e++;
+                else inv++;
+            }
+        });
+        sumSelected.innerText = sel;
+        sumNew.innerText = n;
+        sumExist.innerText = e;
+        sumInv.innerText = inv;
+    }
+    
+    // Master checkbox logic
+    masterCb.addEventListener('change', function() {
+        checkboxes.forEach(cb => cb.checked = masterCb.checked);
+        updateSummary();
+    });
+    
+    // Row checkboxes logic
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateSummary);
+    });
+    
+    // Bulk Selection logic
+    document.getElementById('btn-sel-all').addEventListener('click', () => { checkboxes.forEach(c => c.checked = true); updateSummary(); masterCb.checked=true;});
+    document.getElementById('btn-unsel-all').addEventListener('click', () => { checkboxes.forEach(c => c.checked = false); updateSummary(); masterCb.checked=false;});
+    
+    function selectByStatus(status) {
+        checkboxes.forEach(cb => {
+            if (cb.closest('.record-row').getAttribute('data-status') === status) cb.checked = true;
+        });
+        updateSummary();
+    }
+    document.getElementById('btn-sel-new').addEventListener('click', () => selectByStatus('NEW'));
+    document.getElementById('btn-sel-exist').addEventListener('click', () => selectByStatus('EXISTING'));
+    document.getElementById('btn-sel-inv').addEventListener('click', () => selectByStatus('INVALID'));
+    
+    // Side-by-side logic
+    const tableCol = document.getElementById('table-col');
+    const compareCol = document.getElementById('compare-col');
+    
+    document.querySelectorAll('.compare-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Adjust grid
+            tableCol.classList.remove('col-lg-12');
+            tableCol.classList.add('col-lg-8');
+            compareCol.classList.remove('d-none');
+            
+            // Populate comparison data
+            document.getElementById('cmp-db-name').innerText = this.getAttribute('data-db-name') || 'N/A';
+            document.getElementById('cmp-db-email').innerText = this.getAttribute('data-db-email') || 'N/A';
+            document.getElementById('cmp-db-dept').innerText = this.getAttribute('data-db-dept') || 'N/A';
+            
+            try {
+                const raw = JSON.parse(this.getAttribute('data-raw'));
+                // Attempt to find matching keys (case insensitive)
+                const findKey = (arr) => Object.keys(raw).find(k => arr.includes(k.toLowerCase().trim()));
+                
+                const upNameKey = findKey(['emp_name', 'employee name', 'employee_name', 'name', 'full name']);
+                const upEmailKey = findKey(['email', 'email address', 'email_address', 'mail']);
+                const upDeptKey = findKey(['department', 'dept', 'department_name']);
+                
+                document.getElementById('cmp-up-name').innerText = upNameKey ? raw[upNameKey] : 'N/A';
+                document.getElementById('cmp-up-email').innerText = upEmailKey ? raw[upEmailKey] : 'N/A';
+                document.getElementById('cmp-up-dept').innerText = upDeptKey ? raw[upDeptKey] : 'N/A';
+            } catch(e) {}
+        });
+    });
+    
+    document.getElementById('close-compare-btn').addEventListener('click', () => {
+        tableCol.classList.remove('col-lg-8');
+        tableCol.classList.add('col-lg-12');
+        compareCol.classList.add('d-none');
+    });
+    
+    // Submit logic
+    document.getElementById('final-confirm-btn').addEventListener('click', function() {
+        const selectedIds = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+        if (selectedIds.length === 0) {
+            alert('Please select at least one record to import.');
+            return;
+        }
+        
+        const strategy = document.querySelector('input[name="dup_strategy"]:checked').value;
+        const btn = this;
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+        btn.disabled = true;
+        
+        fetch('/upload_commit/{{ batch_id }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({selected_ids: selectedIds, strategy: strategy})
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.success) {
+                alert(data.message);
+                window.location.href = '/';
+            } else {
+                alert('Error: ' + data.error);
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            alert('Server error');
+            btn.innerHTML = origHtml;
+            btn.disabled = false;
+        });
+    });
+    
+    // Init empty selection
+    updateSummary();
+});
+</script>
+{% endblock %}

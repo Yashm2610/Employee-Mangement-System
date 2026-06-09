@@ -3,7 +3,7 @@
 <div class="row mb-4 align-items-center">
     <div class="col-md-8">
         <h3 class="mb-1 fw-bold text-primary">{{ employee.emp_name }} <span class="badge bg-primary-subtle text-primary fs-6 ms-2 rounded-pill">{{ employee.title }}</span></h3>
-        <p class="text-secondary mb-0"><i class="bi bi-briefcase me-1"></i> {{ employee.department }} &nbsp;|&nbsp; <i class="bi bi-geo-alt me-1"></i> {{ employee.posting_location }} &nbsp;|&nbsp; <i class="bi bi-envelope me-1"></i> {{ employee.email }}</p>
+        <p class="text-secondary mb-0"><i class="bi bi-briefcase me-1"></i> {{ employee.department }} &nbsp;|&nbsp; <i class="bi bi-geo-alt me-1"></i> {{ employee.posting_location }} &nbsp;|&nbsp; <i class="bi bi-envelope me-1"></i> {{ employee.email }} &nbsp;|&nbsp; <i class="bi bi-telephone me-1"></i> {{ employee.phone_number }}</p>
     </div>
     <div class="col-md-4 text-end">
         <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i> Back to Dashboard</a>
@@ -107,6 +107,42 @@
         </div>
     </div>
     
+    
+    <!-- Email Analytics Row -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-12">
+            <div class="card border-0 shadow-sm rounded-4 h-100 card-glow">
+                <div class="card-header bg-white border-0 pt-4 pb-0">
+                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-envelope-paper text-primary me-2"></i>Email Analytics</h5>
+                </div>
+                <div class="card-body">
+                    {% if emails %}
+                    <div class="row text-center mt-2">
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-primary">{{ emails.emails_sent }}</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Emails Sent</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-success">{{ emails.emails_received }}</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Emails Received</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-warning">{{ emails.avg_response_time }} hrs</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Avg Response Time</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-dark">{{ emails.last_activity or 'N/A' }}</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Last Activity</div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-muted fst-italic text-center py-3">No email analytics data recorded.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Charts Section -->
     <div class="col-md-8">
         <div class="row g-4 h-100">

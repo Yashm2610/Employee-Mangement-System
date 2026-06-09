@@ -9,7 +9,7 @@ USE employee_db;
 -- TABLE 1: employees (core identity + HR/demographic data)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS employees (
-    id                          INT AUTO_INCREMENT PRIMARY KEY,
+    id                          INT PRIMARY KEY,
     emp_id                      VARCHAR(50)     NOT NULL UNIQUE,
     emp_name                    VARCHAR(100)    NOT NULL,
     email                       VARCHAR(100)    NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS employees (
 -- TABLE 2: employee_bank_details (1-to-1 with employees)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS employee_bank_details (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    id                  INT PRIMARY KEY,
     emp_id              VARCHAR(50)     NOT NULL UNIQUE,
     bank_name           VARCHAR(100)    DEFAULT 'Bank of America',
     bank_account_num    VARCHAR(50)     DEFAULT '0000000000',
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS employee_bank_details (
 -- Unified table for both allowances and deductions.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS employee_financial_components (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
+    id              INT PRIMARY KEY,
     emp_id          VARCHAR(50)     NOT NULL,
     component_name  VARCHAR(100)    NOT NULL,
     component_code  TINYINT         NOT NULL COMMENT '1 for Allowance, 2 for Deduction',
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS employee_financial_components (
 -- TABLE 4: payslip_master (History of Payslips)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS payslip_master (
-    payslip_id           INT AUTO_INCREMENT PRIMARY KEY,
+    payslip_id           INT PRIMARY KEY,
     payslip_no           VARCHAR(20) UNIQUE,
     emp_id               VARCHAR(50) NOT NULL,
     salary_month         VARCHAR(20),
@@ -71,9 +71,10 @@ CREATE TABLE IF NOT EXISTS payslip_master (
 -- TABLE 5: employee_holidays
 -- ============================================================
 CREATE TABLE IF NOT EXISTS employee_holidays (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
+    id          INT PRIMARY KEY,
     emp_id      VARCHAR(50) NOT NULL,
-    holiday_code TINYINT NOT NULL COMMENT 'Codes: 0=Present, 1=Casual Leave, 2=Sick Leave, 3=Paid Holiday, 4=Absent',
+    holiday_code TINYINT NOT NULL COMMENT 'Codes: 0=Sick Leave, 1=Paid Leave, 2=Casual Leave, 3=Present, 4=Absent',
+    holiday_name VARCHAR(50),
     FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
 );
 
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS employee_holidays (
 -- TABLE 6: employee_emails (Communication Log)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS employee_emails (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT PRIMARY KEY,
     emp_id VARCHAR(50) NOT NULL,
     sender_email VARCHAR(100) DEFAULT 'admin@maxworth.com',
     receiver_email VARCHAR(100),
@@ -98,7 +99,7 @@ CREATE TABLE IF NOT EXISTS employee_emails (
 -- TABLE 7: users (Authentication & Role Management)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS users (
-    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT PRIMARY KEY,
     employee_id VARCHAR(50) UNIQUE,
     username VARCHAR(100) NOT NULL UNIQUE,
     email VARCHAR(100) NOT NULL UNIQUE,
@@ -114,7 +115,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- TABLE 8: user_login_logs (Audit Trail)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS user_login_logs (
-    log_id INT AUTO_INCREMENT PRIMARY KEY,
+    log_id INT PRIMARY KEY,
     user_id INT NOT NULL,
     login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     logout_time DATETIME,
@@ -123,3 +124,20 @@ CREATE TABLE IF NOT EXISTS user_login_logs (
     device VARCHAR(255),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
+
+
+-- ============================================================
+-- TABLE: upload_staging (Temporary staging for bulk uploads)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS upload_staging (
+    id INT PRIMARY KEY,
+    upload_batch_id VARCHAR(50) NOT NULL,
+    employee_id VARCHAR(50),
+    name VARCHAR(100),
+    email VARCHAR(100),
+    status VARCHAR(20) COMMENT 'NEW, EXISTING, INVALID',
+    raw_json TEXT,
+    created_on DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+;

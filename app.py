@@ -1,4 +1,6 @@
 import os
+import string
+import uuid
 import random
 import hashlib
 import datetime
@@ -366,7 +368,7 @@ def index():
                 b.bank_name,
                 b.bank_account_num,
                 b.ifsc_code
-            FROM employees e
+            FROM v_employees e
             LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
         ) AS emp_details WHERE 1=1
     """
@@ -584,7 +586,7 @@ def find_column(columns_clean, df_cols, synonyms):
                         
             # CASE 2: Generate details dynamically
             else:
-                cursor.execute("SELECT COUNT(*) as cnt FROM employees")
+                cursor.execute("SELECT COUNT(*) as cnt FROM v_employees")
                 current_records_count = cursor.fetchone()['cnt']
                 
                 for idx, row in df.iterrows():
@@ -762,7 +764,7 @@ def find_column(columns_clean, df_cols, synonyms):
             # CASE 2: CSV lacks Name/Email but contains year/gender (like Kaggle Employee.csv) or partial headers
             elif 'joiningyear' in columns_clean or date_col or id_col:
                 # Fetch current record count to maintain unique indexing
-                cursor.execute("SELECT COUNT(*) as cnt FROM employees")
+                cursor.execute("SELECT COUNT(*) as cnt FROM v_employees")
                 current_records_count = cursor.fetchone()['cnt']
                 
                 for idx, row in df.iterrows():
@@ -950,17 +952,22 @@ def add_employee():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM employees")
+            next_emp_id = cursor.fetchone()['next_id']
             cursor.execute(
                 """INSERT INTO employees (
-                    emp_id, emp_name, email, date_of_birth, joining_date, basic_salary, allowances, deductions,
+                    id, emp_id, emp_name, email, date_of_birth, joining_date, basic_salary, allowances, deductions,
                     age, gender, education, title, department, posting_location, payment_tier
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (emp_id, emp_name, email, date_of_birth, joining_date, basic_val, allowances_val, deductions_val,
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (next_emp_id, emp_id, emp_name, email, date_of_birth, joining_date, basic_val, allowances_val, deductions_val,
                  age_val, gender_val, education_val, title_val, department_val, posting_location_val, payment_tier_val)
             )
+            
+            cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_b_id FROM employee_bank_details")
+            next_b_id = cursor.fetchone()['next_b_id']
             cursor.execute(
-                "INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) VALUES (%s,%s,%s,%s)",
-                (emp_id, bank_name_val, bank_account_num_val, ifsc_code_val)
+                "INSERT IGNORE INTO employee_bank_details (id, emp_id, bank_name, bank_account_num, ifsc_code, is_active) VALUES (%s,%s,%s,%s,%s,1)",
+                (next_b_id, emp_id, bank_name_val, bank_account_num_val, ifsc_code_val)
             )
             cursor.execute(
                 "INSERT INTO employee_holidays (emp_id, holiday) VALUES (%s,%s)",
@@ -1002,6 +1009,7 @@ def clear_records():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET employee_id = NULL")
             cursor.execute("DELETE FROM employees")
             cursor.execute("DELETE FROM employee_bank_details")
             cursor.execute("DELETE FROM employee_financial_components")
@@ -1021,7 +1029,7 @@ def employee_profile(id):
     """Displays the comprehensive profile for an employee, including emails and payslip history."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM employees WHERE id = %s", (id,))
+    cursor.execute("SELECT * FROM v_employees WHERE id = %s", (id,))
     employee = cursor.fetchone()
     if not employee:
         conn.close()
@@ -1140,7 +1148,7 @@ def employee_profile(id):
                            allowances_data=allowances_data, deductions_data=deductions_data,
                            total_allowances=total_allowances, total_deductions=total_deductions,
                            payroll_transactions=payroll_transactions, email_logs=email_logs,
-                           profile_chart_data=profile_chart_data, tenure_years=tenure_years, attendance=attendance_data)
+                           profile_chart_data=profile_chart_data, tenure_years=tenure_years, attendance=attendance_data, emails=email_logs[0] if email_logs else None)
 
 @app.route('/send_email/<int:id>', methods=['POST'])
 @hr_required
@@ -1148,7 +1156,7 @@ def send_email(id):
     """Simulates sending an email to the employee and logs it."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT emp_id, emp_name, email FROM employees WHERE id = %s", (id,))
+    cursor.execute("SELECT emp_id, emp_name, email FROM v_employees WHERE id = %s", (id,))
     employee = cursor.fetchone()
 
     if not employee:
@@ -1182,7 +1190,7 @@ def view_payslip(id):
     """Generates and displays a detailed salary slip for an employee, fetching from normalized tables and logs the transaction."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM employees WHERE id = %s", (id,))
+    cursor.execute("SELECT * FROM v_employees WHERE id = %s", (id,))
     employee = cursor.fetchone()
 
     if not employee:
@@ -1314,7 +1322,7 @@ def data_dictionary_page():
                 b.ifsc_code,
                 COALESCE(a.total_allowances, 0) AS allowances,
                 COALESCE(d.total_deductions, 0) AS deductions
-            FROM employees e
+            FROM v_employees e
             LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
             LEFT JOIN (
                 SELECT emp_id, SUM(amount) AS total_allowances 
@@ -1402,7 +1410,7 @@ def api_get_employee(emp_id):
             # Get employee basic + bank details
             cursor.execute('''
                 SELECT e.*, b.bank_name, b.bank_account_num, b.ifsc_code 
-                FROM employees e
+                FROM v_employees e
                 LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
                 WHERE e.emp_id = %s
             ''', (emp_id,))
@@ -1509,7 +1517,7 @@ def payslip_builder():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT emp_id, emp_name, title FROM employees ORDER BY emp_name")
+            cursor.execute("SELECT emp_id, emp_name, title FROM v_employees ORDER BY emp_name")
             employees = cursor.fetchall()
     finally:
         conn.close()
@@ -1528,22 +1536,25 @@ def find_column(columns_clean, df_cols, synonyms):
             return df_cols[idx]
     return None
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload_verify', methods=['POST'])
 @hr_required
-def upload_file():
-    if 'csv_file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-        
-    file = request.files['csv_file']
+def upload_verify():
+    file = request.files.get('file') or request.files.get('csv_file')
+    if not file:
+        flash("No file part", "danger")
+        return redirect(url_for('index'))
     if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
+        flash("No selected file", "danger")
+        return redirect(url_for('index'))
         
     ext = file.filename.split('.')[-1].lower()
     if ext not in ['csv', 'xlsx', 'xls']:
-        return jsonify({"error": "Invalid file type. Only CSV and Excel files are allowed."}), 400
+        flash("Invalid file type. Only CSV and Excel files are allowed.", "danger")
+        return redirect(url_for('index'))
         
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    batch_id = str(uuid.uuid4())
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{batch_id}.{ext}")
     file.save(file_path)
     
     try:
@@ -1558,146 +1569,281 @@ def upload_file():
         id_col = find_column(columns_clean, df_cols, ['emp_id', 'employee id', 'employee_id', 'id', 'empid'])
         name_col = find_column(columns_clean, df_cols, ['emp_name', 'employee name', 'employee_name', 'name', 'full name'])
         email_col = find_column(columns_clean, df_cols, ['email', 'email address', 'email_address', 'mail'])
-        date_col = find_column(columns_clean, df_cols, ['date_of_birth', 'dob'])
-        joining_col = find_column(columns_clean, df_cols, ['joining_date', 'doj', 'joining date'])
-        basic_col = find_column(columns_clean, df_cols, ['basic_salary', 'basic salary', 'basic', 'salary'])
         
-        gender_col = find_column(columns_clean, df_cols, ['gender', 'sex'])
-        age_col = find_column(columns_clean, df_cols, ['age'])
-        education_col = find_column(columns_clean, df_cols, ['education', 'degree'])
-        
-        title_col = find_column(columns_clean, df_cols, ['title', 'designation', 'role'])
-        department_col = find_column(columns_clean, df_cols, ['department', 'dept'])
-        posting_col = find_column(columns_clean, df_cols, ['posting_location', 'location', 'city'])
-        tier_col = find_column(columns_clean, df_cols, ['payment_tier', 'tier'])
-        
-        bank_name_col = find_column(columns_clean, df_cols, ['bank_name', 'bank'])
-        bank_acc_col = find_column(columns_clean, df_cols, ['bank_account_num', 'account number', 'acc_num'])
-        ifsc_col = find_column(columns_clean, df_cols, ['ifsc_code', 'ifsc'])
-        
-        if not (id_col and name_col and email_col):
-            return jsonify({"error": f"Missing required columns (Employee ID, Name, Email). Found: {df_cols}"}), 400
-
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        dup_handling = request.form.get('duplicate_handling', 'skip')
-        success_count = 0
-        error_rows = []
+        # Get max ID for auto-generation of EMP ID
+        cursor.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM employees")
+        max_db_id = cursor.fetchone()
+        current_max_id = max_db_id['max_id'] if isinstance(max_db_id, dict) else max_db_id[0]
+        
+        # Fetch existing to check duplicates
+        cursor.execute("SELECT emp_id, email FROM employees")
+        existing_data = cursor.fetchall()
+        existing_emp_ids = {str(e['emp_id']).strip().lower() for e in existing_data}
+        existing_emails = {str(e['email']).strip().lower() for e in existing_data if e['email']}
+        
+        # Get max id for upload_staging
+        cursor.execute("SELECT COALESCE(MAX(id), 0) as max_s_id FROM upload_staging")
+        max_s = cursor.fetchone()
+        current_staging_id = max_s['max_s_id'] if isinstance(max_s, dict) else max_s[0]
+        
+        staging_records = []
+        
+        import json
         
         for idx, row in df.iterrows():
-            emp_id = str(row[id_col]).strip()
-            emp_name = str(row[name_col]).strip()
-            email = str(row[email_col]).strip()
+            current_max_id += 1
+            current_staging_id += 1
             
-            if not emp_id or emp_id == 'nan':
-                error_rows.append({"Row": idx+2, "Error": "Missing Employee ID"})
-                continue
+            if id_col and id_col in row and not pd.isna(row[id_col]):
+                emp_id = str(row[id_col]).strip()
+            else:
+                emp_id = f"EMP{current_max_id:05d}"
                 
-            if not email or '@' not in email:
-                error_rows.append({"Row": idx+2, "Error": "Invalid Email"})
-                continue
+            if name_col and name_col in row and not pd.isna(row[name_col]):
+                emp_name = str(row[name_col]).strip()
+            else:
+                emp_name = f"Employee {current_max_id}"
                 
-            try:
-                date_val = pd.to_datetime(row[date_col]).strftime('%Y-%m-%d') if date_col else '1990-01-01'
-            except:
-                date_val = '1990-01-01'
-            try:
-                joining_val = pd.to_datetime(row[joining_col]).strftime('%Y-%m-%d') if joining_col else '2020-01-01'
-            except:
-                joining_val = '2020-01-01'
-                
-            basic_val = float(row[basic_col]) if basic_col and not pd.isna(row[basic_col]) else 0.0
-            age_val = int(row[age_col]) if age_col and not pd.isna(row[age_col]) else 30
-            gender_val = str(row[gender_col]).strip().capitalize() if gender_col and not pd.isna(row[gender_col]) else 'Male'
+            if email_col and email_col in row and not pd.isna(row[email_col]):
+                email = str(row[email_col]).strip()
+            else:
+                email = f"employee{current_max_id}@hrsm.com"
             
-            education_val = 2
-            if education_col and not pd.isna(row[education_col]):
-                try: education_val = int(row[education_col])
-                except: pass
-                    
-            title_val = str(row[title_col]).strip() if title_col and not pd.isna(row[title_col]) else 'Employee'
-            department_val = str(row[department_col]).strip() if department_col and not pd.isna(row[department_col]) else 'General'
-            posting_val = str(row[posting_col]).strip() if posting_col and not pd.isna(row[posting_col]) else 'Head Office'
-            payment_tier_val = int(row[tier_col]) if tier_col and not pd.isna(row[tier_col]) else 3
+            # Determine status
+            status = "NEW"
+            if emp_id.lower() in existing_emp_ids or email.lower() in existing_emails:
+                status = "EXISTING"
             
-            seed = idx + 1000
-            dyn_basic, dyn_bank, dyn_acc, dyn_ifsc, dyn_allowances, dyn_taxes = get_dynamic_payroll_and_bank(
-                basic_val if basic_val > 0 else 45000.0, title_val, department_val, seed
+            # Simple invalid check (if name is completely missing)
+            if not emp_name or emp_name == 'nan':
+                status = "INVALID"
+                
+            # Convert row to dict for raw_json
+            row_dict = {}
+            for col in df.columns:
+                val = row[col]
+                row_dict[col] = str(val) if not pd.isna(val) else None
+                
+            raw_json = json.dumps(row_dict)
+            
+            staging_records.append((current_staging_id, batch_id, emp_id, emp_name, email, status, raw_json))
+            
+        # Insert into upload_staging
+        if staging_records:
+            cursor.executemany(
+                "INSERT INTO upload_staging (id, upload_batch_id, employee_id, name, email, status, raw_json) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                staging_records
             )
+            conn.commit()
             
-            if basic_val <= 0: basic_val = dyn_basic
+    except Exception as e:
+        flash(f"Error parsing file: {str(e)}", "danger")
+        return redirect(url_for('index'))
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+    return jsonify({"success": True, "redirect": url_for('upload_verify_page', batch_id=batch_id)})
+
+@app.route('/upload/verify/<batch_id>')
+@hr_required
+def upload_verify_page(batch_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM upload_staging WHERE upload_batch_id = %s ORDER BY id ASC", (batch_id,))
+            staging_records = cursor.fetchall()
             
-            b_name = str(row[bank_name_col]).strip() if bank_name_col and not pd.isna(row[bank_name_col]) else dyn_bank
-            b_acc = str(row[bank_acc_col]).strip() if bank_acc_col and not pd.isna(row[bank_acc_col]) else dyn_acc
-            ifsc = str(row[ifsc_col]).strip() if ifsc_col and not pd.isna(row[ifsc_col]) else dyn_ifsc
+            if not staging_records:
+                flash("Batch not found or already processed.", "warning")
+                return redirect(url_for('index'))
+                
+            # For EXISTING records, fetch DB values for side-by-side
+            existing_db = {}
+            existing_ids = [r['employee_id'] for r in staging_records if r['status'] == 'EXISTING']
             
-            try:
+            if existing_ids:
+                format_strings = ','.join(['%s'] * len(existing_ids))
+                cursor.execute(f"SELECT * FROM v_employees WHERE emp_id IN ({format_strings})", tuple(existing_ids))
+                db_recs = cursor.fetchall()
+                for d in db_recs:
+                    existing_db[d['emp_id']] = d
+                    
+    finally:
+        conn.close()
+        
+    return render_template('verify_upload.html', records=staging_records, existing_db=existing_db, batch_id=batch_id)
+
+@app.route('/upload_commit/<batch_id>', methods=['POST'])
+@hr_required
+def upload_commit(batch_id):
+    data = request.json
+    selected_ids = data.get('selected_ids', [])
+    strategy = data.get('strategy', 'skip')
+    
+    if not selected_ids:
+        return jsonify({"success": True, "message": "No records selected."})
+        
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            format_strings = ','.join(['%s'] * len(selected_ids))
+            cursor.execute(f"SELECT * FROM upload_staging WHERE id IN ({format_strings})", tuple(selected_ids))
+            records_to_process = cursor.fetchall()
+            
+            # Implementation of insertions...
+            # To keep it simple, we will insert / update.
+            # (Actual full logic here)
+            import json
+            
+            cursor.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM employees")
+            max_db_id = cursor.fetchone()
+            current_max_id = max_db_id['max_id'] if isinstance(max_db_id, dict) else max_db_id[0]
+            
+            import random
+            import datetime
+            
+            success_count = 0
+            
+            for r in records_to_process:
+                status = r['status']
+                emp_id = r['employee_id']
+                raw = json.loads(r['raw_json'])
+                
+                # Dynamic fallback / parsing
+                # Normalize keys for easier matching
+                raw_lower = {k.lower().strip(): v for k, v in raw.items()}
+                
+                # Extraction helpers
+                def get_val(keys, default):
+                    for k in keys:
+                        if k in raw_lower and raw_lower[k] is not None and str(raw_lower[k]).strip() != 'nan':
+                            return raw_lower[k]
+                    return default
+                    
+                # Parse or Generate Values
+                age_val = int(float(get_val(['age', 'employee_age'], random.randint(22, 60))))
+                
+                # Generate a dynamic DOB based on age
+                current_year = datetime.datetime.now().year
+                dob_year = current_year - age_val
+                dob_month = random.randint(1, 12)
+                dob_day = random.randint(1, 28)
+                date_of_birth = f"{dob_year}-{dob_month:02d}-{dob_day:02d}"
+                
+                join_year = get_val(['joiningyear', 'joining year', 'joining_year'], random.randint(2015, current_year))
+                joining_date = f"{int(float(join_year))}-01-15"
+                
+                basic_salary = float(get_val(['basic_salary', 'salary', 'basicsalary'], random.randint(40000, 150000)))
+                gender = get_val(['gender', 'sex'], random.choice(['Male', 'Female']))
+                
+                # Education: Randomly pick from BTech(1), MTech(2), PhD(3), BSc(4), MSc(5), BCA(6), MCA(7)
+                edu_raw = str(get_val(['education', 'edu'], '')).lower()
+                if edu_raw:
+                    education_tier = 1
+                    if 'master' in edu_raw or 'mtech' in edu_raw: education_tier = 2
+                    elif 'phd' in edu_raw: education_tier = 3
+                else:
+                    education_tier = random.choice([1, 2, 3, 4, 5, 6, 7])
+                
+                title = get_val(['title', 'designation', 'role'], random.choice(['Software Engineer', 'Senior Developer', 'Data Analyst', 'HR Manager', 'Product Manager']))
+                department = get_val(['department', 'dept', 'domain'], random.choice(['Software Development', 'Human Resources', 'Finance', 'Marketing', 'Sales']))
+                posting_location = get_val(['posting_location', 'location', 'city'], random.choice(['Bangalore', 'Pune', 'Hyderabad', 'Mumbai', 'Delhi']))
+                payment_tier = int(float(get_val(['payment_tier', 'paymenttier', 'tier'], random.randint(1, 3))))
+                phone_number = get_val(['phone_number', 'phone', 'contact'], f"9{random.randint(100000000, 999999999)}")
+                
+                # FK Mappings (Optional mapping to Master Tables, if needed)
+                # Ensure department_code, location_code, etc are populated if your system uses them.
+                # Assuming simple insertion and we mapped them roughly or trigger handles it, or we insert into employees.
+                
                 # Check if exists
-                cursor.execute('SELECT id FROM employees WHERE emp_id = %s', (emp_id,))
+                cursor.execute("SELECT id FROM employees WHERE emp_id = %s", (emp_id,))
                 exists = cursor.fetchone()
                 
                 if exists:
-                    if dup_handling in ['skip', 'insert_new']:
-                        error_rows.append({"Row": idx+2, "Error": f"Skipped Duplicate Employee ID: {emp_id}"})
+                    if strategy == 'skip' or strategy == 'insert_new':
                         continue
-                    elif dup_handling == 'update':
-                        cursor.execute(
-                            """UPDATE employees SET emp_name=%s, email=%s, date_of_birth=%s, joining_date=%s, basic_salary=%s,
-                            age=%s, gender=%s, education=%s, title=%s, department=%s, posting_location=%s, payment_tier=%s
-                            WHERE emp_id=%s""",
-                            (emp_name, email, date_val, joining_val, basic_val, age_val, gender_val, education_val, title_val, department_val, posting_val, payment_tier_val, emp_id)
-                        )
-                        cursor.execute("UPDATE employee_bank_details SET bank_name=%s, bank_account_num=%s, ifsc_code=%s WHERE emp_id=%s", (b_name, b_acc, ifsc, emp_id))
+                    elif strategy == 'update':
+                        cursor.execute("""
+                            UPDATE employees SET 
+                                emp_name=%s, email=%s, date_of_birth=%s, joining_date=%s, 
+                                basic_salary=%s, age=%s, gender=%s, education=%s, 
+                                title=%s, department=%s, posting_location=%s, payment_tier=%s, phone_number=%s
+                            WHERE emp_id=%s
+                        """, (r['name'], r['email'], date_of_birth, joining_date, basic_salary, age_val, gender, education_tier, title, department, posting_location, payment_tier, phone_number, emp_id))
                         success_count += 1
-                        continue
-                
-                # Insert New
-                cursor.execute(
-                    """INSERT INTO employees (
-                        emp_id, emp_name, email, date_of_birth, joining_date, basic_salary,
-                        age, gender, education, title, department, posting_location, payment_tier
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (emp_id, emp_name, email, date_val, joining_val, basic_val, age_val, gender_val, education_val, title_val, department_val, posting_val, payment_tier_val)
-                )
-                cursor.execute(
-                    """INSERT IGNORE INTO employee_bank_details (emp_id, bank_name, bank_account_num, ifsc_code) 
-                    VALUES (%s,%s,%s,%s)""", (emp_id, b_name, b_acc, ifsc)
-                )
-                cursor.execute("""INSERT IGNORE INTO employee_holidays (emp_id, holiday_code) VALUES (%s, 0)""", (emp_id,))
-                
-                # Insert dynamic allowances and deductions if the CSV didn't have them
-                for atype, amt in dyn_allowances:
-                    cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,1,%s)", (emp_id, atype, amt))
-                for ttype, amt in dyn_taxes:
-                    cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,2,%s)", (emp_id, ttype, amt))
-                    
-                success_count += 1
-            except pymysql.err.IntegrityError:
-                error_rows.append({"Row": idx+2, "Error": f"Duplicate Error: {emp_id}"})
-            except Exception as ex:
-                error_rows.append({"Row": idx+2, "Error": str(ex)})
-                
-        conn.commit()
-        conn.close()
-        
-        error_file_url = ""
-        if error_rows:
-            error_df = pd.DataFrame(error_rows)
-            from datetime import datetime
-            err_filename = f"error_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-            error_df.to_csv(os.path.join(app.config['UPLOAD_FOLDER'], err_filename), index=False)
-            error_file_url = url_for('download_report', filename=f"uploads/{err_filename}")
+                else:
+                    if strategy == 'update' or strategy == 'insert_new' or strategy == 'skip':
+                        current_max_id += 1
+                        cursor.execute("""
+                            INSERT INTO employees (
+                                id, emp_id, emp_name, email, date_of_birth, joining_date, 
+                                basic_salary, age, gender, education, title, department, 
+                                posting_location, payment_tier, phone_number
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (current_max_id, emp_id, r['name'], r['email'], date_of_birth, joining_date, basic_salary, age_val, gender, education_tier, title, department, posting_location, payment_tier, phone_number))
+                        
+                        # Generate Bank Details
+                        bank_name = random.choice(['HDFC Bank', 'ICICI Bank', 'SBI', 'Axis Bank', 'Kotak Mahindra'])
+                        acct_num = f"{random.randint(100000000000, 999999999999)}"
+                        ifsc = f"{bank_name[:4].upper()}000{random.randint(1000, 9999)}"
+                        pan = f"{''.join(random.choices(string.ascii_uppercase, k=5))}{random.randint(1000, 9999)}{random.choice(string.ascii_uppercase)}"
+                        
+                        cursor.execute("SELECT COALESCE(MAX(id), 0) FROM employee_bank_details")
+                        b_max = cursor.fetchone()
+                        next_b_id = (b_max[list(b_max.keys())[0]] if isinstance(b_max, dict) else b_max[0]) + 1
+                        
+                        cursor.execute("""
+                            INSERT INTO employee_bank_details (
+                                id, emp_id, bank_name, bank_account_num, ifsc_code, is_active
+                            ) VALUES (%s, %s, %s, %s, %s, 1)
+                        """, (next_b_id, emp_id, bank_name, acct_num, ifsc))
+                        
+                        # Generate Financial Components dynamically
+                        components = [
+                            ('Meal Allowance', 1, random.uniform(1000, 5000)),
+                            ('Medical Allowance', 1, random.uniform(2000, 15000)),
+                            ('Internet Allowance', 1, random.uniform(1000, 5000)),
+                            ('House Rent Allowance', 1, random.uniform(5000, 25000)),
+                            ('Transport Allowance', 1, random.uniform(2000, 10000)),
+                            ('Special Allowance', 1, random.uniform(2000, 20000)),
+                            ('Provident Fund', 2, random.uniform(1000, 10000)),
+                            ('Insurance', 2, random.uniform(1000, 8000)),
+                            ('Professional Tax', 2, random.uniform(500, 3000)),
+                            ('Income Tax', 2, random.uniform(1000, 20000))
+                        ]
+                        
+                        # Pick 6 to 9 random components for each employee
+                        selected_components = random.sample(components, random.randint(6, 9))
+                        
+                        cursor.execute("SELECT COALESCE(MAX(id), 0) FROM employee_financial_components")
+                        fc_max = cursor.fetchone()
+                        next_fc_id = (fc_max[list(fc_max.keys())[0]] if isinstance(fc_max, dict) else fc_max[0]) + 1
+                        
+                        for comp_name, comp_code, base_amt in selected_components:
+                            amt = round(base_amt * (basic_salary / 50000), 2)  # Scale roughly based on salary
+                            if amt < 0: amt = 100.00
+                            cursor.execute("""
+                                INSERT INTO employee_financial_components (
+                                    id, emp_id, component_name, component_code, amount, is_active
+                                ) VALUES (%s, %s, %s, %s, %s, 1)
+                            """, (next_fc_id, emp_id, comp_name, comp_code, amt))
+                            next_fc_id += 1
+                            
+                        success_count += 1
+                        
+            # Clean up staging table
+            cursor.execute("DELETE FROM upload_staging WHERE upload_batch_id = %s", (batch_id,))
+            conn.commit()
             
-        return jsonify({
-            "success": True,
-            "success_count": success_count,
-            "error_count": len(error_rows),
-            "error_file": error_file_url
-        })
-        
+            return jsonify({"success": True, "message": f"Successfully processed {success_count} records."})
+            
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        conn.close()
 
 @app.route('/export/employees')
 @hr_required
@@ -1779,7 +1925,7 @@ def financial_master():
     query = """
         SELECT e.emp_id, e.emp_name, e.basic_salary, e.joining_date, e.payment_tier,
                b.bank_name, b.bank_account_num, b.ifsc_code
-        FROM employees e
+        FROM v_employees e
         LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
         WHERE 1=1
     """
@@ -1903,9 +2049,11 @@ def login():
                     ip_address = request.remote_addr
                     browser = request.user_agent.browser
                     device = request.user_agent.platform
+                    cursor.execute("SELECT COALESCE(MAX(log_id), 0) + 1 AS next_id FROM user_login_logs")
+                    new_log_id = cursor.fetchone()['next_id']
                     cursor.execute(
-                        "INSERT INTO user_login_logs (user_id, ip_address, browser, device) VALUES (%s, %s, %s, %s)",
-                        (user['user_id'], ip_address, browser, device)
+                        "INSERT INTO user_login_logs (log_id, user_id, ip_address, browser, device) VALUES (%s, %s, %s, %s, %s)",
+                        (new_log_id, user['user_id'], ip_address, browser, device)
                     )
                     conn.commit()
                     
@@ -1949,15 +2097,17 @@ def users():
                 if action == 'create':
                     emp_id = request.form.get('employee_id')
                     username = request.form.get('username')
-                    email = request.form.get('email')
+                    email = f"{username}@hrsm.com"
                     password = request.form.get('password')
                     role = request.form.get('role')
                     
                     pw_hash = generate_password_hash(password)
                     try:
+                        cursor.execute("SELECT COALESCE(MAX(user_id), 0) + 1 AS next_id FROM users")
+                        new_u_id = cursor.fetchone()['next_id']
                         cursor.execute(
-                            "INSERT INTO users (employee_id, username, email, password_hash, role, is_active) VALUES (%s, %s, %s, %s, %s, TRUE)",
-                            (emp_id if emp_id else None, username, email, pw_hash, role)
+                            "INSERT INTO users (user_id, employee_id, username, email, password_hash, role, is_active) VALUES (%s, %s, %s, %s, %s, %s, TRUE)",
+                            (new_u_id, emp_id if emp_id else None, username, email, pw_hash, role)
                         )
                         conn.commit()
                         flash("User created successfully.", "success")
@@ -1973,7 +2123,7 @@ def users():
             cursor.execute("SELECT u.*, e.emp_name FROM users u LEFT JOIN employees e ON u.employee_id = e.emp_id")
             users_list = cursor.fetchall()
             
-            cursor.execute("SELECT emp_id, emp_name FROM employees")
+            cursor.execute("SELECT emp_id, emp_name FROM v_employees")
             employees_list = cursor.fetchall()
             
     finally:
@@ -1997,7 +2147,7 @@ def employee_dashboard():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM employees WHERE emp_id = %s", (emp_id,))
+            cursor.execute("SELECT * FROM v_employees WHERE emp_id = %s", (emp_id,))
             employee = cursor.fetchone()
             
             if not employee:
@@ -2032,25 +2182,61 @@ def employee_dashboard():
             total_deductions_db = sum(float(d['amount']) for d in deductions) if deductions else calculated_ded
             net_pay = float(basic_base) + total_allowances_db - total_deductions_db
             
-            # Ensure age is integer
-            try:
-                employee['age'] = int(employee['age'])
-            except:
-                employee['age'] = 0
+            # Calculate tenure and attendance for template
+            from datetime import datetime
+            import random
+            
+            joining_date = employee['joining_date']
+            if isinstance(joining_date, str):
+                joining_date = datetime.strptime(joining_date, '%Y-%m-%d').date()
+            
+            today = datetime.now().date()
+            tenure_days = (today - joining_date).days
+            if tenure_days < 0: tenure_days = 0
+            tenure_years = tenure_days / 365.25
+            
+            random.seed(emp_id + "attendance")
+            total_working_days = int(tenure_days * 5 / 7)
+            attendance_days = int(total_working_days * random.uniform(0.85, 0.98))
+            attendance_score = (attendance_days / total_working_days * 100) if total_working_days > 0 else 100
+            
+            random.seed(emp_id + "performance")
+            performance_score = random.uniform(3.5, 4.9)
+            
+            attendance_data = {
+                'total': total_working_days,
+                'present': attendance_days,
+                'sick': 0,
+                'casual': 0,
+                'absent': total_working_days - attendance_days,
+                'percentage': round(attendance_score, 1)
+            }
+            
+            allowances_data = [(a['component_name'], a['amount']) for a in allowances]
+            deductions_data = [(d['component_name'], d['amount']) for d in deductions]
+            bank = bank_details or {}
+            
+            profile_chart_data = {
+                'labels': ['Attendance', 'Performance', 'Punctuality', 'Teamwork', 'Communication'],
+                'scores': [attendance_score, performance_score * 20, random.uniform(80, 95), random.uniform(75, 98), random.uniform(80, 100)]
+            }
                 
     finally:
         conn.close()
         
     return render_template('employee_profile.html', 
                           employee=employee, 
-                          bank_details=bank_details,
-                          allowances=allowances,
-                          deductions=deductions,
-                          calculated_allowances=calculated_allowances,
-                          calculated_taxes=calculated_taxes,
-                          emails=emails,
-                          payslips=payslips,
-                          net_pay=net_pay,
+                          bank=bank,
+                          allowances_data=allowances_data,
+                          deductions_data=deductions_data,
+                          total_allowances=total_allowances_db,
+                          total_deductions=total_deductions_db,
+                          payroll_transactions=payslips,
+                          email_logs=emails,
+                          profile_chart_data=profile_chart_data,
+                          tenure_years=tenure_years,
+                          attendance=attendance_data,
+                          emails=emails[0] if emails else None,
                           is_employee_dashboard=True)
 
 
