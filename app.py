@@ -2,6 +2,10 @@ import os
 import random
 import hashlib
 import datetime
+from functools import wraps
+from flask import session
+from werkzeug.security import check_password_hash, generate_password_hash
+
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
 import pandas as pd
 import pymysql
@@ -195,6 +199,39 @@ def init_db():
         print(f"Error initializing DB: {e}")
     finally:
         conn.close()
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def hr_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        if session.get('role') not in ['Admin', 'HR']:
+            flash("Unauthorized access.", "danger")
+            if session.get('role') == 'Employee':
+                return redirect(url_for('employee_dashboard'))
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        if session.get('role') != 'Admin':
+            flash("Admin privileges required.", "danger")
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 def generate_employee_details(row, offset_index):
     """
     Generates realistic employee details from a row of the Kaggle Employee dataset.
@@ -282,6 +319,7 @@ def generate_employee_details(row, offset_index):
 
 
 @app.route('/')
+@hr_required
 def index():
     """Displays the main interface with upload capabilities, manual entry, search, and sorting."""
     search_col = request.args.get('search_col', 'emp_name').strip()
@@ -856,6 +894,7 @@ def find_column(columns_clean, df_cols, synonyms):
         return redirect(url_for('index'))
  
 @app.route('/add', methods=['POST'])
+@hr_required
 def add_employee():
     """Handles manual adding of employees from the front-end form."""
     emp_id = request.form.get('emp_id', '').strip()
@@ -941,6 +980,7 @@ def add_employee():
     return redirect(url_for('index'))
 
 @app.route('/delete/<int:id>', methods=['POST'])
+@hr_required
 def delete_employee(id):
     """Optional helper route to delete a single employee record."""
     conn = get_db_connection()
@@ -956,6 +996,7 @@ def delete_employee(id):
     return redirect(url_for('index'))
 
 @app.route('/clear', methods=['POST'])
+@hr_required
 def clear_records():
     """Helper route to clear all records from the database for easy testing."""
     conn = get_db_connection()
@@ -975,6 +1016,7 @@ def clear_records():
     return redirect(url_for('index'))
 
 @app.route('/employee/<int:id>')
+@hr_required
 def employee_profile(id):
     """Displays the comprehensive profile for an employee, including emails and payslip history."""
     conn = get_db_connection()
@@ -1101,6 +1143,7 @@ def employee_profile(id):
                            profile_chart_data=profile_chart_data, tenure_years=tenure_years, attendance=attendance_data)
 
 @app.route('/send_email/<int:id>', methods=['POST'])
+@hr_required
 def send_email(id):
     """Simulates sending an email to the employee and logs it."""
     conn = get_db_connection()
@@ -1134,6 +1177,7 @@ def send_email(id):
     return redirect(url_for('employee_profile', id=id))
 
 @app.route('/payslip/<int:id>')
+@hr_required
 def view_payslip(id):
     """Generates and displays a detailed salary slip for an employee, fetching from normalized tables and logs the transaction."""
     conn = get_db_connection()
@@ -1230,6 +1274,7 @@ def view_payslip(id):
     )
 
 @app.route('/data-dictionary')
+@hr_required
 def data_dictionary_page():
     """Displays a side-by-side view of live database preview and the Data Dictionary metadata."""
     search_col = request.args.get('search_col', '').strip()
@@ -1338,6 +1383,7 @@ def data_dictionary_page():
                            search_col=search_col, search_val=search_val, allowed_cols=allowed_cols)
 
 @app.route('/download/<path:filename>')
+@hr_required
 def download_report(filename):
     """Allows downloading the Word reports directly from the server."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1348,6 +1394,7 @@ from flask import jsonify
 from datetime import datetime
 
 @app.route('/api/employee/<emp_id>')
+@hr_required
 def api_get_employee(emp_id):
     conn = get_db_connection()
     try:
@@ -1396,6 +1443,7 @@ def api_get_employee(emp_id):
         conn.close()
 
 @app.route('/payslip_builder', methods=['GET', 'POST'])
+@hr_required
 def payslip_builder():
     """Interactive UI for generating and customizing a Payslip in real-time."""
     if request.method == 'POST':
@@ -1481,6 +1529,7 @@ def find_column(columns_clean, df_cols, synonyms):
     return None
 
 @app.route('/upload', methods=['POST'])
+@hr_required
 def upload_file():
     if 'csv_file' not in request.files:
         return jsonify({"error": "No file part"}), 400
@@ -1651,6 +1700,7 @@ def upload_file():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/export/employees')
+@hr_required
 def export_employees():
     fmt = request.args.get('format', 'csv')
     
@@ -1677,6 +1727,7 @@ def export_employees():
         return send_file(io.BytesIO(output.getvalue().encode()), as_attachment=True, download_name='employees_import_template.csv', mimetype='text/csv')
 
 @app.route('/export/payslips')
+@hr_required
 def export_payslips():
     fmt = request.args.get('format', 'csv')
     conn = get_db_connection()
@@ -1702,10 +1753,12 @@ def export_payslips():
         return send_file(io.BytesIO(output.getvalue().encode()), as_attachment=True, download_name='payslips_export.csv', mimetype='text/csv')
 
 @app.route('/data_dictionary')
+@hr_required
 def data_dictionary():
     return render_template('data_dictionary.html')
 
 @app.route('/financial_master')
+@hr_required
 def financial_master():
     search_col = request.args.get('search_col', 'emp_name').strip()
     search_val = request.args.get('search_val', '').strip()
@@ -1776,6 +1829,7 @@ def financial_master():
                            allowed_cols=allowed_cols)
 
 @app.route('/update_employee_financials', methods=['POST'])
+@hr_required
 def update_employee_financials():
     emp_id = request.form.get('emp_id')
     bank_name = request.form.get('bank_name')
@@ -1824,6 +1878,180 @@ def update_employee_financials():
         conn.close()
         
     return redirect(url_for('financial_master'))
+
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        identifier = request.form.get('identifier')
+        password = request.form.get('password')
+        
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM users WHERE (username = %s OR email = %s) AND is_active = TRUE", (identifier, identifier))
+                user = cursor.fetchone()
+                
+                if user and check_password_hash(user['password_hash'], password):
+                    session['user_id'] = user['user_id']
+                    session['username'] = user['username']
+                    session['role'] = user['role']
+                    session['employee_id'] = user['employee_id']
+                    
+                    # Log audit
+                    ip_address = request.remote_addr
+                    browser = request.user_agent.browser
+                    device = request.user_agent.platform
+                    cursor.execute(
+                        "INSERT INTO user_login_logs (user_id, ip_address, browser, device) VALUES (%s, %s, %s, %s)",
+                        (user['user_id'], ip_address, browser, device)
+                    )
+                    conn.commit()
+                    
+                    if user['role'] == 'Employee':
+                        return redirect(url_for('employee_dashboard'))
+                    return redirect(url_for('index'))
+                else:
+                    flash("Invalid credentials or account disabled.", "danger")
+        finally:
+            conn.close()
+            
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Update logout time for the latest login log
+            cursor.execute(
+                "UPDATE user_login_logs SET logout_time = CURRENT_TIMESTAMP WHERE user_id = %s ORDER BY log_id DESC LIMIT 1",
+                (session.get('user_id'),)
+            )
+            conn.commit()
+    finally:
+        conn.close()
+    
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for('login'))
+
+@app.route('/users', methods=['GET', 'POST'])
+@admin_required
+def users():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if request.method == 'POST':
+                action = request.form.get('action')
+                if action == 'create':
+                    emp_id = request.form.get('employee_id')
+                    username = request.form.get('username')
+                    email = request.form.get('email')
+                    password = request.form.get('password')
+                    role = request.form.get('role')
+                    
+                    pw_hash = generate_password_hash(password)
+                    try:
+                        cursor.execute(
+                            "INSERT INTO users (employee_id, username, email, password_hash, role, is_active) VALUES (%s, %s, %s, %s, %s, TRUE)",
+                            (emp_id if emp_id else None, username, email, pw_hash, role)
+                        )
+                        conn.commit()
+                        flash("User created successfully.", "success")
+                    except Exception as e:
+                        flash(f"Error creating user: {e}", "danger")
+                
+                elif action == 'toggle_status':
+                    user_id = request.form.get('user_id')
+                    cursor.execute("UPDATE users SET is_active = NOT is_active WHERE user_id = %s", (user_id,))
+                    conn.commit()
+                    flash("User status updated.", "success")
+            
+            cursor.execute("SELECT u.*, e.emp_name FROM users u LEFT JOIN employees e ON u.employee_id = e.emp_id")
+            users_list = cursor.fetchall()
+            
+            cursor.execute("SELECT emp_id, emp_name FROM employees")
+            employees_list = cursor.fetchall()
+            
+    finally:
+        conn.close()
+        
+    return render_template('users.html', users=users_list, employees=employees_list)
+
+@app.route('/employee/dashboard')
+@login_required
+def employee_dashboard():
+    # Only employees or admins can view this (admins can view via the profile route, but if an admin goes here, it shows their linked profile if any)
+    if session.get('role') not in ['Employee', 'Admin', 'HR']:
+        return redirect(url_for('login'))
+        
+    emp_id = session.get('employee_id')
+    if not emp_id:
+        flash("No employee record linked to this account.", "danger")
+        return redirect(url_for('login'))
+        
+    # We reuse the employee_profile logic but strict to emp_id
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM employees WHERE emp_id = %s", (emp_id,))
+            employee = cursor.fetchone()
+            
+            if not employee:
+                flash("Employee record not found.", "danger")
+                return redirect(url_for('login'))
+                
+            cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
+            bank_details = cursor.fetchone()
+            
+            cursor.execute("SELECT * FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+            financials = cursor.fetchall()
+            allowances = [f for f in financials if f['component_code'] == 1]
+            deductions = [f for f in financials if f['component_code'] == 2]
+            
+            cursor.execute("SELECT * FROM employee_emails WHERE emp_id = %s ORDER BY sent_at DESC", (emp_id,))
+            emails = cursor.fetchall()
+            
+            cursor.execute("SELECT * FROM payslip_master WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
+            payslips = cursor.fetchall()
+            
+            # Additional logic can be added if needed, matching employee_profile route
+            basic_base = employee['basic_salary']
+            _, _, _, _, calculated_allowances, calculated_taxes = get_dynamic_payroll_and_bank(
+                basic_base, employee['title'], employee['department'], 
+                int(employee['emp_id'].split('-')[1]) if '-' in employee['emp_id'] else 1
+            )
+            
+            calculated_earn = sum(v for k, v in calculated_allowances)
+            calculated_ded = sum(v for k, v in calculated_taxes)
+            
+            total_allowances_db = sum(float(a['amount']) for a in allowances) if allowances else calculated_earn
+            total_deductions_db = sum(float(d['amount']) for d in deductions) if deductions else calculated_ded
+            net_pay = float(basic_base) + total_allowances_db - total_deductions_db
+            
+            # Ensure age is integer
+            try:
+                employee['age'] = int(employee['age'])
+            except:
+                employee['age'] = 0
+                
+    finally:
+        conn.close()
+        
+    return render_template('employee_profile.html', 
+                          employee=employee, 
+                          bank_details=bank_details,
+                          allowances=allowances,
+                          deductions=deductions,
+                          calculated_allowances=calculated_allowances,
+                          calculated_taxes=calculated_taxes,
+                          emails=emails,
+                          payslips=payslips,
+                          net_pay=net_pay,
+                          is_employee_dashboard=True)
 
 
 if __name__ == '__main__':

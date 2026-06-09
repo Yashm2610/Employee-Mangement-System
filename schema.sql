@@ -93,3 +93,33 @@ CREATE TABLE IF NOT EXISTS employee_emails (
     status VARCHAR(20) DEFAULT 'Sent',
     FOREIGN KEY (emp_id) REFERENCES employees(emp_id) ON DELETE CASCADE
 );
+
+-- ============================================================
+-- TABLE 7: users (Authentication & Role Management)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    employee_id VARCHAR(50) UNIQUE,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) DEFAULT 'Employee' COMMENT 'Admin, HR, Employee',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_login DATETIME,
+    FOREIGN KEY (employee_id) REFERENCES employees(emp_id) ON DELETE SET NULL
+);
+
+-- ============================================================
+-- TABLE 8: user_login_logs (Audit Trail)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_login_logs (
+    log_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    logout_time DATETIME,
+    ip_address VARCHAR(45),
+    browser VARCHAR(255),
+    device VARCHAR(255),
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
