@@ -108,41 +108,6 @@
     </div>
     
     
-    <!-- Email Analytics Row -->
-    <div class="row g-4 mb-4">
-        <div class="col-md-12">
-            <div class="card border-0 shadow-sm rounded-4 h-100 card-glow">
-                <div class="card-header bg-white border-0 pt-4 pb-0">
-                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-envelope-paper text-primary me-2"></i>Email Analytics</h5>
-                </div>
-                <div class="card-body">
-                    {% if emails %}
-                    <div class="row text-center mt-2">
-                        <div class="col-3">
-                            <div class="fs-4 fw-bold text-primary">{{ emails.emails_sent }}</div>
-                            <div class="fs-8 text-muted text-uppercase tracking-wider">Emails Sent</div>
-                        </div>
-                        <div class="col-3">
-                            <div class="fs-4 fw-bold text-success">{{ emails.emails_received }}</div>
-                            <div class="fs-8 text-muted text-uppercase tracking-wider">Emails Received</div>
-                        </div>
-                        <div class="col-3">
-                            <div class="fs-4 fw-bold text-warning">{{ emails.avg_response_time }} hrs</div>
-                            <div class="fs-8 text-muted text-uppercase tracking-wider">Avg Response Time</div>
-                        </div>
-                        <div class="col-3">
-                            <div class="fs-4 fw-bold text-dark">{{ emails.last_activity or 'N/A' }}</div>
-                            <div class="fs-8 text-muted text-uppercase tracking-wider">Last Activity</div>
-                        </div>
-                    </div>
-                    {% else %}
-                    <div class="text-muted fst-italic text-center py-3">No email analytics data recorded.</div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Charts Section -->
     <div class="col-md-8">
         <div class="row g-4 h-100">
@@ -194,6 +159,41 @@
         </div>
     </div>
 </div>
+
+    <!-- Email Analytics Row -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-12">
+            <div class="card border-0 shadow-sm rounded-4 h-100 card-glow" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#emailHistoryModal">
+                <div class="card-header bg-white border-0 pt-4 pb-0">
+                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-envelope-paper text-primary me-2"></i>Email Analytics</h5>
+                </div>
+                <div class="card-body">
+                    {% if emails %}
+                    <div class="row text-center mt-2">
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-primary">{{ emails.emails_sent }}</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Emails Sent</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-success">{{ emails.emails_received }}</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Emails Received</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-warning">{{ emails.avg_response_time }} hrs</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Avg Response Time</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fs-4 fw-bold text-dark">{{ emails.last_activity or 'N/A' }}</div>
+                            <div class="fs-8 text-muted text-uppercase tracking-wider">Last Activity</div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-muted fst-italic text-center py-3">No email analytics data recorded.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 
 <!-- Payslip Transactions -->
 <div class="card border-0 shadow-sm rounded-4 mb-4 card-glow">
@@ -299,4 +299,57 @@
     });
 </script>
 {% endif %}
+<!-- Email History Modal -->
+<div class="modal fade" id="emailHistoryModal" tabindex="-1" aria-labelledby="emailHistoryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-light border-0">
+        <h5 class="modal-title fw-bold text-dark" id="emailHistoryModalLabel"><i class="bi bi-clock-history text-primary me-2"></i>Email Communication History</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light text-secondary text-uppercase fs-8 tracking-wider">
+              <tr>
+                <th class="ps-4">Subject</th>
+                <th>Sent To</th>
+                <th>Sent At</th>
+                <th>Reply Received</th>
+                <th>Avg Response</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in email_logs %}
+              <tr>
+                <td class="ps-4 fw-medium text-dark">{{ log.subject }}</td>
+                <td class="text-muted">{{ log.receiver_email }}</td>
+                <td class="text-muted"><i class="bi bi-calendar-event me-1"></i>{{ log.sent_at.strftime('%d %b %Y %H:%M') if log.sent_at is not string else log.sent_at }}</td>
+                <td class="text-muted">
+                    {% if log.response_received_at %}
+                    <i class="bi bi-check-circle-fill text-success me-1"></i>{{ log.response_received_at.strftime('%d %b %Y %H:%M') if log.response_received_at is not string else log.response_received_at }}
+                    {% else %}
+                    <span class="text-muted fst-italic">Waiting for reply</span>
+                    {% endif %}
+                </td>
+                <td class="fw-medium text-dark">
+                    {{ log.avg_response if log.avg_response else 'N/A' }}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="text-center py-5 text-muted fst-italic">No email history found.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer border-0 bg-light">
+        <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

@@ -1,3 +1,7 @@
+import json
+import os
+import tempfile
+from playwright.sync_api import sync_playwright
 import os
 import string
 import uuid
@@ -326,7 +330,7 @@ def index():
     """Displays the main interface with upload capabilities, manual entry, search, and sorting."""
     search_col = request.args.get('search_col', 'emp_name').strip()
     search_val = request.args.get('search_val', '').strip()
-    sort_order = request.args.get('sort', 'joining_date_desc')
+    sort_order = request.args.get('sort', 'id_asc')
     selected_tier = request.args.get('tier', 'all').strip()
     
     # Advanced Filters
@@ -1425,6 +1429,16 @@ def api_get_employee(emp_id):
                 random.seed(emp_id)
                 emp['phone_number'] = "+91-" + "".join([str(random.randint(0, 9)) for _ in range(10)])
                 
+            # Get company info
+            cursor.execute('SELECT name, address FROM company_master LIMIT 1')
+            company_info = cursor.fetchone()
+            if company_info:
+                emp['company_name'] = company_info.get('name', 'Maxworth')
+                emp['company_address'] = company_info.get('address') or emp.get('posting_location', 'Head Office')
+            else:
+                emp['company_name'] = 'Maxworth'
+                emp['company_address'] = emp.get('posting_location', 'Head Office')
+                
             # Generate dummy bank details if missing
             if not emp.get('bank_name'):
                 random.seed(emp_id + "bank")
@@ -1438,10 +1452,15 @@ def api_get_employee(emp_id):
                 emp['date_of_birth'] = str(emp['date_of_birth'])
             if emp.get('joining_date'):
                 emp['joining_date'] = str(emp['joining_date'])
+            if 'basic_salary' in emp and emp['basic_salary'] is not None:
+                emp['basic_salary'] = float(emp['basic_salary'])
                 
             # Get financial components
             cursor.execute('SELECT * FROM employee_financial_components WHERE emp_id = %s', (emp_id,))
             components = cursor.fetchall()
+            for c in components:
+                if 'amount' in c and c['amount'] is not None:
+                    c['amount'] = float(c['amount'])
             
             return jsonify({
                 "employee": emp,
@@ -1450,9 +1469,9 @@ def api_get_employee(emp_id):
     finally:
         conn.close()
 
-@app.route('/payslip_builder', methods=['GET', 'POST'])
+@app.route('/payslip_builder_v1', methods=['GET', 'POST'])
 @hr_required
-def payslip_builder():
+def payslip_builder_legacy():
     """Interactive UI for generating and customizing a Payslip in real-time."""
     if request.method == 'POST':
         # Save the generated payslip to payslip_master
@@ -1909,7 +1928,7 @@ def financial_master():
     search_col = request.args.get('search_col', 'emp_name').strip()
     search_val = request.args.get('search_val', '').strip()
     tier = request.args.get('tier', 'all').strip()
-    sort_order = request.args.get('sort', 'date_desc').strip()
+    sort_order = request.args.get('sort', 'id_asc').strip()
 
     allowed_cols = {
         'emp_name': 'Employee Name',
@@ -2055,6 +2074,7 @@ def login():
                         "INSERT INTO user_login_logs (log_id, user_id, ip_address, browser, device) VALUES (%s, %s, %s, %s, %s)",
                         (new_log_id, user['user_id'], ip_address, browser, device)
                     )
+                    cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s", (user['user_id'],))
                     conn.commit()
                     
                     if user['role'] == 'Employee':
@@ -2122,6 +2142,15 @@ def users():
             
             cursor.execute("SELECT u.*, e.emp_name FROM users u LEFT JOIN employees e ON u.employee_id = e.emp_id")
             users_list = cursor.fetchall()
+            
+            import re
+            for u in users_list:
+                if not u['emp_name'] and u['email']:
+                    # Extract from email
+                    name_part = u['email'].split('@')[0]
+                    name_part = re.sub(r'[0-9]', '', name_part).replace('.', ' ')
+                    u['emp_name'] = name_part.title()
+            
             
             cursor.execute("SELECT emp_id, emp_name FROM v_employees")
             employees_list = cursor.fetchall()
@@ -2216,11 +2245,56 @@ def employee_dashboard():
             deductions_data = [(d['component_name'], d['amount']) for d in deductions]
             bank = bank_details or {}
             
+            performance_labels = ['Q1', 'Q2', 'Q3', 'Q4']
+            base_score = random.randint(70, 90)
+            performance_scores = [
+                min(100, max(0, base_score + random.randint(-5, 10))),
+                min(100, max(0, base_score + random.randint(-5, 12))),
+                min(100, max(0, base_score + random.randint(-3, 15))),
+                min(100, max(0, base_score + random.randint(-2, 18)))
+            ]
+            
             profile_chart_data = {
-                'labels': ['Attendance', 'Performance', 'Punctuality', 'Teamwork', 'Communication'],
-                'scores': [attendance_score, performance_score * 20, random.uniform(80, 95), random.uniform(75, 98), random.uniform(80, 100)]
+                'holiday_labels': ['Present', 'Casual Leave', 'Sick Leave', 'Absent'],
+                'holiday_counts': [attendance_days, 0, 0, total_working_days - attendance_days],
+                'email_months': [],
+                'email_counts': [],
+                'performance_labels': performance_labels,
+                'performance_scores': performance_scores
             }
-                
+            
+            if not emails:
+                emails_stats = {
+                    'emails_sent': random.randint(20, 150),
+                    'emails_received': random.randint(10, 80),
+                    'avg_response_time': round(random.uniform(1.5, 4.2), 1),
+                    'last_activity': today.strftime('%Y-%m-%d %H:%M')
+                }
+                # Generate some mock email logs for the history modal
+                from datetime import datetime, timedelta
+                now = datetime.now()
+                mock_logs = []
+                for i in range(5):
+                    sent = now - timedelta(days=random.randint(1, 30), hours=random.randint(1, 23))
+                    has_reply = random.choice([True, False])
+                    if has_reply:
+                        resp_hours = random.uniform(0.5, 48.0)
+                        replied = sent + timedelta(hours=resp_hours)
+                    else:
+                        resp_hours = 0
+                        replied = None
+                        
+                    mock_logs.append({
+                        'subject': random.choice(['Project Update', 'Leave Request', 'Weekly Report', 'Client Feedback']),
+                        'receiver_email': f"contact{i+1}@example.com",
+                        'sent_at': sent,
+                        'response_received_at': replied,
+                        'avg_response': f"{round(resp_hours, 1)} hrs" if has_reply else "N/A"
+                    })
+                emails = mock_logs
+            else:
+                emails_stats = emails[0]
+
     finally:
         conn.close()
         
@@ -2234,11 +2308,200 @@ def employee_dashboard():
                           payroll_transactions=payslips,
                           email_logs=emails,
                           profile_chart_data=profile_chart_data,
-                          tenure_years=tenure_years,
+                          tenure_years=max(1.0, tenure_years),
                           attendance=attendance_data,
-                          emails=emails[0] if emails else None,
+                          emails=emails_stats,
                           is_employee_dashboard=True)
 
+
+
+# --- ENTERPRISE PAYSLIP DESIGNER ROUTES ---
+
+@app.route('/payslip_builder')
+@hr_required
+def payslip_builder():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT emp_id, emp_name FROM employees")
+    employees = cursor.fetchall()
+    conn.close()
+    return render_template('payslip_designer.html', employees=employees)
+
+@app.route('/api/fields/discover', methods=['GET'])
+@hr_required
+def api_discover_fields():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    tables = [
+        'employees', 'employee_bank_details', 'employee_financial_components',
+        'department_master', 'designation_master'
+    ]
+    
+    schema = {}
+    for table in tables:
+        try:
+            cursor.execute(f"SHOW COLUMNS FROM {table}")
+            columns = [row['Field'] for row in cursor.fetchall()]
+            schema[table] = columns
+        except Exception as e:
+            pass
+            
+    conn.close()
+    return jsonify(schema)
+
+@app.route('/api/templates', methods=['GET', 'POST'])
+@hr_required
+def api_templates():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if request.method == 'GET':
+        cursor.execute("SELECT * FROM payslip_templates ORDER BY updated_at DESC")
+        templates = cursor.fetchall()
+        for t in templates:
+            t['created_at'] = t['created_at'].isoformat() if t['created_at'] else None
+            t['updated_at'] = t['updated_at'].isoformat() if t['updated_at'] else None
+        conn.close()
+        return jsonify(templates)
+        
+    if request.method == 'POST':
+        data = request.json
+        template_name = data.get('template_name', 'Untitled')
+        layout_json = json.dumps(data.get('layout_json', {}))
+        status = data.get('status', 'Draft')
+        
+        cursor.execute(
+            "INSERT INTO payslip_templates (template_name, layout_json, status) VALUES (%s, %s, %s)",
+            (template_name, layout_json, status)
+        )
+        template_id = cursor.lastrowid
+        
+        cursor.execute(
+            "INSERT INTO payslip_template_versions (template_id, version_number, published_by, layout_json) VALUES (%s, %s, %s, %s)",
+            (template_id, 1, session.get('user_id'), layout_json)
+        )
+        cursor.execute(
+            "INSERT INTO payslip_template_audit_log (template_id, version_number, action_type, user_id) VALUES (%s, %s, %s, %s)",
+            (template_id, 1, 'Create', session.get('user_id'))
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'template_id': template_id})
+
+@app.route('/api/preview-data', methods=['GET'])
+@hr_required
+def api_preview_data():
+    emp_id = request.args.get('emp_id')
+    month = request.args.get('month')
+    year = request.args.get('year')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM v_employees WHERE emp_id = %s", (emp_id,))
+    employee = cursor.fetchone() or {}
+    
+    cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
+    bank = cursor.fetchone() or {}
+    
+    cursor.execute("SELECT * FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+    financials = cursor.fetchall()
+    
+    allowances = [f for f in financials if f['component_code'] == 1]
+    deductions = [f for f in financials if f['component_code'] == 2]
+    
+    conn.close()
+    
+    preview_data = {
+        'employees': employee,
+        'employee_bank_details': bank,
+        'employee_financial_components': financials,
+        'allowances': allowances,
+        'deductions': deductions
+    }
+    
+    def serialize_val(val):
+        from datetime import date, datetime
+        from decimal import Decimal
+        if isinstance(val, (date, datetime)): return val.isoformat()
+        if isinstance(val, Decimal): return float(val)
+        return val
+        
+    def walk_dict(d):
+        for k, v in d.items():
+            if isinstance(v, dict): walk_dict(v)
+            elif isinstance(v, list): 
+                for item in v:
+                    if isinstance(item, dict): walk_dict(item)
+            else:
+                d[k] = serialize_val(v)
+                
+    walk_dict(preview_data)
+    return jsonify(preview_data)
+
+@app.route('/api/generate-payslip-pdf', methods=['POST'])
+@hr_required
+def api_generate_payslip_pdf():
+    data = request.json
+    html_content = data.get('html_content')
+    template_id = data.get('template_id')
+    
+    if not html_content:
+        return jsonify({'success': False, 'error': 'No HTML content provided'})
+        
+    try:
+        fd, temp_pdf_path = tempfile.mkstemp(suffix='.pdf')
+        os.close(fd)
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_content(html_content, wait_until="networkidle")
+            page.pdf(path=temp_pdf_path, format="A4", print_background=True)
+            browser.close()
+        
+        if template_id:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO payslip_template_audit_log (template_id, action_type, user_id) VALUES (%s, %s, %s)",
+                (template_id, 'Generate PDF', session.get('user_id'))
+            )
+            conn.commit()
+            conn.close()
+            
+        return send_file(temp_pdf_path, as_attachment=True, download_name='Payslip.pdf')
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+
+@app.route('/api/v1/templates/validate', methods=['POST'])
+@hr_required
+def api_template_validate():
+    data = request.json
+    html_content = data.get('layout_html', '')
+    formulas = data.get('formulas', {})
+    
+    warnings = []
+    errors = []
+    
+    if 'undefined' in html_content or 'null' in html_content:
+        warnings.append('Template contains undefined data bindings.')
+        
+    for key, expr in formulas.items():
+        if '/' in expr and '0' in expr:
+            errors.append(f'Formula error in {key}: Potential division by zero.')
+            
+    if html_content.count('<tr') > 25:
+        warnings.append('Table row count might exceed A4 page boundaries.')
+        
+    return jsonify({
+        'valid': len(errors) == 0, 
+        'errors': errors, 
+        'warnings': warnings
+    })
 
 if __name__ == '__main__':
     # Only run database initialization in the main worker process when Flask's reloader is enabled

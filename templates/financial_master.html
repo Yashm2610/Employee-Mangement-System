@@ -56,6 +56,7 @@
     <div class="d-flex align-items-center gap-2">
         <span class="text-secondary small fw-medium">Sort Order:</span>
         <div class="btn-group" role="group">
+            <a href="{{ url_for('financial_master', search_col=search_col, search_val=search_val, tier=tier, sort='id_asc') }}" class="btn btn-sm {% if sort == 'id_asc' %}btn-secondary{% else %}btn-outline-secondary bg-white{% endif %}">EMP ID</a>
             <a href="{{ url_for('financial_master', search_col=search_col, search_val=search_val, tier=tier, sort='date_desc') }}" class="btn btn-sm {% if sort == 'date_desc' %}btn-secondary{% else %}btn-outline-secondary bg-white{% endif %}">Date (Newest)</a>
             <a href="{{ url_for('financial_master', search_col=search_col, search_val=search_val, tier=tier, sort='date_asc') }}" class="btn btn-sm {% if sort == 'date_asc' %}btn-secondary{% else %}btn-outline-secondary bg-white{% endif %}">Date (Oldest)</a>
         </div>

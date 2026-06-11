@@ -62,7 +62,8 @@
                                 <a href="{{ url_for('employee_profile', id=u.employee_id|replace('EMP-', '')|int) }}" class="text-decoration-none fw-medium">{{ u.emp_name }}</a>
                                 <div class="text-muted fs-8 font-monospace">{{ u.employee_id }}</div>
                             {% else %}
-                                <span class="text-muted fst-italic">None</span>
+                                <span class="fw-medium text-dark">{{ u.emp_name }}</span>
+                                <div class="text-muted fs-8 fst-italic">System Account</div>
                             {% endif %}
                         </td>
                         <td class="text-secondary fs-8">
