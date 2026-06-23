@@ -218,10 +218,10 @@
                     <tr>
                         <td class="ps-4 fw-semibold text-primary font-monospace">{{ p.payslip_no }}</td>
                         <td><span class="badge bg-light text-dark border">{{ p.salary_month }} {{ p.salary_year }}</span></td>
-                        <td class="text-end font-monospace text-muted">₹{{ "{:,.2f}".format(p.basic_salary) }}</td>
-                        <td class="text-end font-monospace text-success">+₹{{ "{:,.2f}".format(p.total_allowance) }}</td>
-                        <td class="text-end font-monospace text-danger">-₹{{ "{:,.2f}".format(p.total_deduction) }}</td>
-                        <td class="text-end font-monospace fw-bold text-dark pe-4">₹{{ "{:,.2f}".format(p.final_in_hand_salary) }}</td>
+                        <td class="text-end font-monospace text-muted">₹{{ "{:,.2f}".format(p.basic_salary or 0) }}</td>
+                        <td class="text-end font-monospace text-success">+₹{{ "{:,.2f}".format(p.total_allowance or 0) }}</td>
+                        <td class="text-end font-monospace text-danger">-₹{{ "{:,.2f}".format(p.total_deduction or 0) }}</td>
+                        <td class="text-end font-monospace fw-bold text-dark pe-4">₹{{ "{:,.2f}".format(p.net_salary or 0) }}</td>
                     </tr>
                     {% endfor %}
                     {% if not payroll_transactions %}

@@ -26,7 +26,7 @@
                 <div class="input-group">
                     <span class="input-group-text bg-white border-end-0 text-muted border-secondary-subtle"><i class="bi bi-search"></i></span>
                     <input type="text" class="form-control border-start-0 ps-0 border-secondary-subtle" name="search_val" placeholder="Enter filter value..." value="{{ search_val }}">
-                    {% if search_val or tier != 'all' %}
+                    {% if search_val %}
                         <a href="{{ url_for('financial_master', sort=sort) }}" class="btn btn-outline-secondary d-flex align-items-center" title="Reset Filters">
                             <i class="bi bi-arrow-clockwise"></i>
                         </a>
@@ -34,14 +34,7 @@
                 </div>
             </div>
             
-            <div class="col-md-3 col-12">
-                <select class="form-select border-secondary-subtle" name="tier" onchange="this.form.submit()">
-                    <option value="all" {% if tier == 'all' or not tier %}selected{% endif %}>All Slabs (Tiers)</option>
-                    <option value="1" {% if tier == '1' %}selected{% endif %}>Executive (Tier 1)</option>
-                    <option value="2" {% if tier == '2' %}selected{% endif %}>Professional (Tier 2)</option>
-                    <option value="3" {% if tier == '3' %}selected{% endif %}>Associate (Tier 3)</option>
-                </select>
-            </div>
+
             
             <div class="col-md-2 col-12">
                 <button class="btn btn-primary w-100" type="submit">
@@ -279,16 +272,6 @@
         }));
     }
 
-    function openEditModalFromBtn(btn) {
-        const d = btn.dataset;
-        openEditModal(d.empId, d.empName, d.bankName, d.bankAcc, d.ifsc, d.basicSalary);
-    }
-    
-    function openEditModalFromBtn(btn) {
-        const d = btn.dataset;
-        openEditModal(d.empId, d.empName, d.bankName, d.bankAcc, d.ifsc, d.basicSalary);
-    }
-    
     function openEditModalFromBtn(btn) {
         const d = btn.dataset;
         openEditModal(d.empId, d.empName, d.bankName, d.bankAcc, d.ifsc, d.basicSalary);

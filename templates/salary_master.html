@@ -53,7 +53,7 @@
             <div class="col-md-2 col-6">
                 <select class="form-select form-select-sm border-secondary-subtle" name="year" onchange="this.form.submit()">
                     {% set max_year = [year, now_year] | max %}
-                    {% for y in range(min_year, max_year + 2) %}
+                    {% for y in range(2024, 2027) %}
                     <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
                     {% endfor %}
                 </select>
@@ -298,7 +298,7 @@
                         <label class="form-label fw-semibold small text-muted text-uppercase">Year</label>
                         <select class="form-select form-select-sm" id="modalYear">
                             {% set max_year = [year, now_year] | max %}
-                            {% for y in range(min_year, max_year + 2) %}
+                            {% for y in range(2024, 2027) %}
                             <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
                             {% endfor %}
                         </select>
