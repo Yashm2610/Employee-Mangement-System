@@ -309,7 +309,10 @@
                             <table class="table table-hover align-middle mb-0 text-nowrap" id="employeeTable">
                                 <thead class="table-dark">
                                     <tr>
-                                        <th scope="col" class="py-3 ps-3 resizable-th">
+                                        <th scope="col" class="py-3 ps-3 resizable-th text-white">S. No.</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">File No.</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">STATUS</th>
+                                        <th scope="col" class="py-3 resizable-th">
                                             <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='id_asc' if sort == 'id_desc' else 'id_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
                                                 Employee ID
                                                 {% if sort == 'id_asc' %}
@@ -323,7 +326,7 @@
                                         </th>
                                         <th scope="col" class="py-3 resizable-th">
                                             <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='name_asc' if sort == 'name_desc' else 'name_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
-                                                Employee Name
+                                                EMPLOYEE NAME
                                                 {% if sort == 'name_asc' %}
                                                     <i class="bi bi-arrow-up text-primary"></i>
                                                 {% elif sort == 'name_desc' %}
@@ -333,25 +336,14 @@
                                                 {% endif %}
                                             </a>
                                         </th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Email Address</th>
-                                        <th scope="col" class="py-3 resizable-th text-center text-white">Age</th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Gender</th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Education</th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Salary Slab</th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Title (Designation)</th>
-                
-                                        <th scope="col" class="py-3 resizable-th text-white">Department</th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Bank Name</th>
-                                        <th scope="col" class="py-3 resizable-th text-white">Bank Account #</th>
-                                        
-                                        <th scope="col" class="py-3 resizable-th text-white">Posting Location</th>
-                                        <th scope="col" class="py-3 resizable-th text-center text-white">Payment Tier</th>
-                                        
-                                
-                                        <th scope="col" class="py-3 resizable-th text-center text-white">Leave or Not</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Designation</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">UAN No</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">Employement Type</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">DEPARTMENT</th>
+                                        <th scope="col" class="py-3 resizable-th text-white">SITE</th>
                                         <th scope="col" class="py-3 resizable-th">
                                             <a href="{{ url_for('index', search_col=search_col, search_val=search_val, sort='date_asc' if sort == 'date_desc' else 'date_desc', tier=tier) }}" class="text-white text-decoration-none d-flex align-items-center gap-1">
-                                                Joining Date
+                                                DOJ
                                                 {% if sort == 'date_asc' %}
                                                     <i class="bi bi-arrow-up text-primary"></i>
                                                 {% elif sort == 'date_desc' %}
@@ -361,85 +353,48 @@
                                                 {% endif %}
                                             </a>
                                         </th>
-                                        <th scope="col" class="py-3 text-end pe-3 text-white">Action</th>
+                                        <th scope="col" class="py-3 text-end pe-3 text-white" style="position: sticky !important; right: 0 !important; z-index: 10 !important; background-color: #212529 !important; box-shadow: -1px 0 0 rgba(255,255,255,0.1) !important;">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% if employees %}
                                         {% for emp in employees %}
                                             <tr>
-                                                <td class="fw-bold text-dark ps-3"><code>{{ emp.emp_id }}</code></td>
+                                                <td class="ps-3">{{ loop.index }}</td>
+                                                <td>{{ emp.id * 50 }}</td>
+                                                <td>
+                                                    {% set status_code = emp.get('leave_or_not', 0) %}
+                                                    {% if status_code == 0 %}
+                                                        <span class="badge bg-success-subtle text-success border border-success px-2 py-0.5 fs-8">Active</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary px-2 py-0.5 fs-8">Inactive</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="fw-bold text-dark"><code>{{ emp.emp_id }}</code></td>
                                                 <td class="fw-bold text-dark">
                                                     <a href="{{ url_for('employee_profile', id=emp.id) }}" class="text-decoration-none">
                                                         {{ emp.emp_name }}
                                                     </a>
                                                 </td>
-                                                <td>
-                                                    <a href="mailto:{{ emp.email }}" class="text-decoration-none d-flex align-items-center gap-1 text-dark fw-medium">
-                                                        <i class="bi bi-envelope fs-7"></i>
-                                                        {{ emp.email }}
-                                                    </a>
-                                                </td>
-                                                <td class="text-center font-monospace">{{ emp.age }}</td>
-                                                <td>
-                                                    {% if emp.gender == 'Female' %}
-                                                        <span class="text-danger-emphasis"><i class="bi bi-gender-female me-1"></i>Female</span>
-                                                    {% elif emp.gender == 'Male' %}
-                                                        <span class="text-primary-emphasis"><i class="bi bi-gender-male me-1"></i>Male</span>
-                                                    {% else %}
-                                                        <span class="text-secondary"><i class="bi bi-gender-ambiguous me-1"></i>{{ emp.gender }}</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td>
-                                                    {% set ed = emp.education|string %}
-                                                    {% set edu_map = {'1': 'BTech', '2': 'MTech', '3': 'PhD', '4': 'BSc', '5': 'MSc', '6': 'BCA', '7': 'MCA', '8': '12th', '9': '10th', '10': 'Diploma'} %}
-                                                    {% if ed in edu_map %}
-                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ edu_map[ed] }}</span>
-                                                    {% else %}
-                                                        <span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.education }}</span>
-                                                    {% endif %}
-                                                </td>
-
-                                                <td>
-                                                    {% if emp.payment_tier == 1 %}
-                                                        <span class="badge bg-success-subtle text-success border border-success px-2 py-1.5 fs-7">Executive (Tier 1)</span>
-                                                    {% elif emp.payment_tier == 2 %}
-                                                        <span class="badge bg-info-subtle text-info border border-info px-2 py-1.5 fs-7">Professional (Tier 2)</span>
-                                                    {% else %}
-                                                        <span class="badge bg-warning-subtle text-warning border border-warning px-2 py-1.5 fs-7">Associate (Tier 3)</span>
-                                                    {% endif %}
-                                                </td>
                                                 <td><span class="badge bg-light text-dark border px-2.5 py-1.5 fs-7">{{ emp.title }}</span></td>
-                                                <td>{{ emp.department }}</td>
-                                                <td>{{ emp.bank_name }}</td>
-                                                <td class="font-monospace">{{ emp.bank_account_num }}</td>
-                                                <td>{{ emp.posting_location }}</td>
-                                                <td class="text-center"><span class="badge bg-light text-dark border px-2 py-1 fs-7">Tier {{ emp.payment_tier }}</span></td>
-                                                <td class="text-center">
-                                                    {% set status_code = emp.get('leave_or_not', 0) %}
-                                                    {% if status_code == 0 %}
-                                                        <span class="badge bg-success-subtle text-success border border-success px-2 py-0.5 fs-8">Active</span>
-                                                    {% elif status_code == 1 %}
-                                                        <span class="badge bg-warning-subtle text-warning border border-warning px-2 py-0.5 fs-8">On Leave</span>
-                                                    {% elif status_code == 2 %}
-                                                        <span class="badge bg-danger-subtle text-danger border border-danger px-2 py-0.5 fs-8">Medical</span>
-                                                    {% elif status_code == 3 %}
-                                                        <span class="badge bg-info-subtle text-info border border-info px-2 py-0.5 fs-8">Parental</span>
-                                                    {% elif status_code == 4 %}
-                                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary px-2 py-0.5 fs-8">Unpaid</span>
-                                                    {% elif status_code == 5 %}
-                                                        <span class="badge bg-dark-subtle text-dark border border-dark px-2 py-0.5 fs-8">Resigned</span>
+                                                <td class="font-monospace">{{ emp.bank_account_num or '-' }}</td>
+                                                <td>
+                                                    {% set title_lower = emp.title | lower %}
+                                                    {% if 'trainee' in title_lower or 'intern' in title_lower %}
+                                                        Temporary
                                                     {% else %}
-                                                        <span class="badge bg-dark-subtle text-dark border border-dark px-2 py-0.5 fs-8">Retired</span>
+                                                        Permanent
                                                     {% endif %}
                                                 </td>
+                                                <td>{{ emp.department }}</td>
+                                                <td>{{ emp.posting_location }}</td>
                                                 <td>
                                                     <span class="badge bg-light text-dark border border-secondary-subtle px-2.5 py-1.5 font-monospace">
                                                         <i class="bi bi-calendar3 me-1 text-primary"></i>
                                                         {{ emp.joining_date }}
                                                     </span>
                                                 </td>
-                                                <td class="text-end pe-3">
+                                                <td class="text-end pe-3 bg-white" style="position: sticky !important; right: 0 !important; z-index: 5 !important; background-color: #fff !important; box-shadow: -1px 0 0 #dee2e6 !important;">
                                                     <a href="{{ url_for('payslip_builder', selected_emp_id=emp.emp_id) }}" class="btn btn-sm btn-outline-primary rounded-circle p-1.5 me-1" title="Prepare Payroll / Payslip">
                                                         <i class="bi bi-receipt fs-7 d-flex"></i>
                                                     </a>
