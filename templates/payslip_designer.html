@@ -2,11 +2,12 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
-    body { background-color: #f5f6f8; font-family: 'Inter', sans-serif; overflow: hidden; margin: 0; }
+    body { background-color: #f5f6f8; font-family: 'Inter', sans-serif; overflow-y: auto; overflow-x: hidden; margin: 0; }
     
     .studio-topbar { height: 50px; background: #fff; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
     .studio-container { display: flex; height: calc(100vh - 100px); }
@@ -37,7 +38,7 @@
     /* Payslip Skeleton Grid (Excel-like) */
     .skeleton-grid {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-        padding: 20px; pointer-events: none; font-family: Arial, sans-serif;
+        padding: 20px; font-family: Arial, sans-serif;
     }
     
     .canvas-field {
@@ -67,7 +68,7 @@
     .canvas-field.selected .resize-handle { display: block; }
     .element-toolbar i:hover { color: #dc3545; }
     
-    .sidebar-right { width: 280px; background: #fff; border-left: 1px solid #e0e0e0; display: flex; flex-direction: column; }
+    .sidebar-right { width: 340px; background: #fff; border-left: 1px solid #e0e0e0; display: flex; flex-direction: column; overflow-y: auto; }
     .prop-section { padding: 15px; border-bottom: 1px solid #eee; }
     .prop-title { font-size: 12px; font-weight: 700; color: #555; margin-bottom: 15px; }
     .prop-row { display: flex; gap: 10px; margin-bottom: 10px; }
@@ -84,14 +85,16 @@
         <div class="ms-4 border-start ps-4">
             <label class="small text-muted me-2">Template Theme:</label>
             <select class="form-select form-select-sm d-inline-block w-auto" id="template-selector" onchange="changeTemplate(this.value)">
-                <option value="template-1">Green Theme (Default)</option>
-                <option value="template-2">Paybooks Style (Minimal)</option>
-                <option value="template-3">Zylker Style (Clean)</option>
+                <option value="template-1">Maxworth Excel Style (Default)</option>
             </select>
         </div>
     </div>
     <div>
-        <button class="btn btn-sm btn-light" onclick="undo()">Undo (Ctrl+Z)</button>
+        <button class="btn btn-sm btn-info text-white" onclick="printPayslip()"><i class="bi bi-printer"></i> Print</button>
+        <button class="btn btn-sm btn-danger ms-2" onclick="downloadPDF()"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+        <button class="btn btn-sm btn-warning ms-2" onclick="saveTemplate()"><i class="bi bi-save"></i> Save Template</button>
+        <button class="btn btn-sm btn-secondary ms-2" onclick="loadTemplate()"><i class="bi bi-folder2-open"></i> Load Template</button>
+        <button class="btn btn-sm btn-light ms-2" onclick="undo()">Undo (Ctrl+Z)</button>
         <button class="btn btn-sm btn-primary ms-2">Publish Payslip</button>
     </div>
 </div>
@@ -106,14 +109,35 @@
         <div class="form-section bg-primary bg-opacity-10">
             <label class="fs-7 fw-bold mb-1 text-primary"><i class="bi bi-lightning-charge-fill"></i> Auto-Fill Details</label>
             <p class="fs-7 text-muted" style="font-size:10px;">Select an employee to instantly fill their basic details.</p>
-            <select class="form-select form-select-sm" id="emp-selector" onchange="fetchEmployeeData(this.value)">
+            <select class="form-select form-select-sm mb-2" id="emp-selector" onchange="fetchEmployeeData()">
                 <option value="">-- Start Blank or Select --</option>
                 {% if employees %}
                     {% for e in employees %}
-                    <option value="{{ e.emp_id }}">{{ e.emp_name }} ({{ e.emp_id }})</option>
+                    <option value="{{ e.emp_id }}" {% if e.emp_id == selected_emp_id %}selected{% endif %}>{{ e.emp_name }} ({{ e.emp_id }})</option>
                     {% endfor %}
                 {% endif %}
             </select>
+            <div class="d-flex gap-1">
+                <select class="form-select form-select-sm" id="month-selector" onchange="fetchEmployeeData()">
+                    <option value="">-- Latest --</option>
+                    <option value="1">Jan</option>
+                    <option value="2">Feb</option>
+                    <option value="3">Mar</option>
+                    <option value="4">Apr</option>
+                    <option value="5">May</option>
+                    <option value="6">Jun</option>
+                    <option value="7">Jul</option>
+                    <option value="8">Aug</option>
+                    <option value="9">Sep</option>
+                    <option value="10">Oct</option>
+                    <option value="11">Nov</option>
+                    <option value="12">Dec</option>
+                </select>
+                <select class="form-select form-select-sm" id="year-selector" onchange="fetchEmployeeData()">
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                </select>
+            </div>
         </div>
         
         <div class="form-section">
@@ -136,10 +160,23 @@
         </div>
         
         <div class="form-section">
+            <div class="section-title">Attendance Details</div>
+            <div id="attendance-details-list">
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="Total Month Days"><input type="text" class="field-value-input" id="f-month-days" value="31"></div></div>
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="Total Days Paid"><input type="text" class="field-value-input" id="f-paid-days" value="31"></div></div>
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="CL Balance"><input type="text" class="field-value-input" id="f-cl-bal" value="0"></div></div>
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="EL Balance"><input type="text" class="field-value-input" id="f-el-bal" value="0"></div></div>
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="SL Balance"><input type="text" class="field-value-input" id="f-sl-bal" value="0"></div></div>
+            </div>
+            <button class="add-btn mt-2" onclick="addField('attendance-details-list', 'Attendance', '')">+ Add Attendance Detail</button>
+        </div>
+
+        <div class="form-section">
             <div class="section-title">Bank Details</div>
             <div id="bank-details-list">
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="Bank Name"><input type="text" class="field-value-input" id="f-bank" value="HDFC Bank"></div></div>
-                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="Account No."><input type="text" class="field-value-input" id="f-acc" value="******6789"></div></div>
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="Bank A/c No"><input type="text" class="field-value-input" id="f-acc" value="0000000000"></div></div>
+                <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="UAN No."><input type="text" class="field-value-input" id="f-uan" value="100XXXXXXXXX"></div></div>
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="IFSC Code"><input type="text" class="field-value-input" id="f-ifsc" value="HDFC0001234"></div></div>
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap"><input type="text" class="field-label-input" value="Payment Date"><input type="text" class="field-value-input" id="f-pay-date" value="28-Jun-2026"></div></div>
             </div>
@@ -147,7 +184,7 @@
         </div>
         
         <div class="form-section">
-            <div class="section-title">Earnings</div>
+            <div class="section-title"><span class="movable-label" style="display:inline-block; cursor:move;">Earnings</span></div>
             <div id="earnings-list">
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap border-success"><input type="text" class="field-label-input bg-light" value="Basic Salary"><input type="text" class="field-value-input" id="f-basic" value="65,000"></div></div>
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap border-success"><input type="text" class="field-label-input bg-light" value="HRA"><input type="text" class="field-value-input" value="26,000"></div></div>
@@ -156,7 +193,7 @@
         </div>
         
         <div class="form-section">
-            <div class="section-title">Deductions</div>
+            <div class="section-title"><span class="movable-label" style="display:inline-block; cursor:move;">Deductions</span></div>
             <div id="deductions-list">
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap border-danger"><input type="text" class="field-label-input bg-light" value="PF"><input type="text" class="field-value-input" value="1,800"></div></div>
                 <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap border-danger"><input type="text" class="field-label-input bg-light" value="Income Tax"><input type="text" class="field-value-input" value="12,000"></div></div>
@@ -165,7 +202,7 @@
         </div>
         
         <div class="form-section mt-auto">
-            <div class="section-title">Net Pay</div>
+            <div class="section-title"><span class="movable-label" style="display:inline-block; cursor:move;">Net Pay</span></div>
             <div class="field-row drag-source"><i class="bi bi-list field-drag"></i><div class="field-input-wrap border-primary"><input type="text" class="field-label-input bg-primary text-white" value="Net Payable"><input type="text" class="field-value-input fw-bold" id="f-net" value="113,000"></div></div>
         </div>
     </div>
@@ -180,223 +217,131 @@
         
         <div class="canvas-scroll-area">
             <div class="a4-canvas" id="canvas">
-                <!-- STRUCTURAL SKELETON (Excel Inspired - Template 1) -->
-                <div class="skeleton-grid" id="template-1">
-                    <div style="border: 2px solid #556b2f; padding: 4px;">
-                        <div style="border: 1px solid #556b2f;">
-                            <!-- Header Row -->
-                            <div style="display:flex; border-bottom: 1px solid #556b2f; min-height: 80px;">
-                                <div style="width: 30%; background-color: #6b843a; color: white; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:16px;">
-                                    <span class="placeholder-text" style="color:#e0e0e0; font-weight:normal; font-size:14px;">[Company Header]</span>
+                <!-- STRUCTURAL SKELETON (Maxworth Excel Inspired - Template 1) -->
+                <div class="skeleton-grid" id="template-1" style="background:#fff;">
+                    <div style="border: none; padding: 20px;">
+                        
+                        <!-- Logo Section -->
+                        <div style="display:flex; justify-content:flex-end; margin-bottom: 5px;">
+                            <div style="text-align: right;" contenteditable="true">
+                                <div style="color: #0f4c81; font-weight: bold; font-size: 24px; font-family: 'Arial Black', sans-serif;">
+                                    MAX<span style="color: #f26522;">W</span>ORTH
                                 </div>
-                                <div style="width: 40%; display:flex; flex-direction:column; border-left: 1px solid #556b2f; border-right: 1px solid #556b2f;">
-                                    <div style="flex:1; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; letter-spacing:1px; border-bottom: 1px solid #556b2f;">SALARY SLIP</div>
-                                    <div style="height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                        <span class="placeholder-text" style="color:#aaa; font-weight:normal;">[Month Year]</span>
-                                    </div>
-                                </div>
-                                <div style="width: 30%; background-image: radial-gradient(#aaa 15%, transparent 16%); background-size: 8px 8px; background-color: #d1dcab; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:bold; letter-spacing:1px;">
-                                    CONFIDENTIAL
-                                </div>
-                            </div>
-
-                            <!-- Employee Info -->
-                            <div style="display:flex; border-bottom: 1px solid #556b2f; min-height: 120px;">
-                                <div style="flex:1; border-right: 1px solid #556b2f; padding: 10px;">
-                                    <span class="placeholder-text" style="color:#aaa;">[Drop Name, ID, etc.]</span>
-                                </div>
-                                <div style="flex:1; padding: 10px;">
-                                    <span class="placeholder-text" style="color:#aaa;">[Drop Title, Dept, etc.]</span>
-                                </div>
-                            </div>
-
-                            <!-- Table Header -->
-                            <div style="display:flex; background-color: #6b843a; color: white; font-weight:bold; border-bottom: 1px solid #556b2f;">
-                                <div style="width: 34%; padding: 8px; text-align:center; border-right: 1px solid #556b2f;">Description</div>
-                                <div style="width: 33%; padding: 8px; text-align:center; border-right: 1px solid #556b2f;">Earnings</div>
-                                <div style="width: 33%; padding: 8px; text-align:center;">Deductions</div>
-                            </div>
-
-                            <!-- Table Body -->
-                            <div style="display:flex; min-height: 350px; border-bottom: 1px solid #556b2f;">
-                                <div style="width: 34%; border-right: 1px solid #556b2f; padding: 10px;">
-                                </div>
-                                <div style="width: 33%; border-right: 1px solid #556b2f; padding: 10px;">
-                                </div>
-                                <div style="width: 33%; padding: 10px;">
-                                </div>
-                            </div>
-
-                            <!-- Totals -->
-                            <div style="display:flex; border-bottom: 1px solid #556b2f; font-weight:bold;">
-                                <div style="width: 34%; padding: 8px; border-right: 1px solid #556b2f;">Total</div>
-                                <div style="width: 33%; padding: 8px; border-right: 1px solid #556b2f; text-align:right;">
-                                </div>
-                                <div style="width: 33%; padding: 8px; text-align:right;">
-                                </div>
-                            </div>
-
-                            <!-- Footer -->
-                            <div style="display:flex; min-height: 120px;">
-                                <div style="width: 50%; border-right: 1px solid #556b2f; padding: 10px;">
-                                    <span class="placeholder-text" style="color:#aaa;">[Drop Bank & Payment Info]</span>
-                                </div>
-                                <div style="width: 50%; display:flex; flex-direction:column;">
-                                    <div style="background-color: #6b843a; color: white; padding: 8px; text-align:center; font-weight:bold; letter-spacing:1px; border-bottom: 1px solid #556b2f;">NET PAY</div>
-                                    <div style="background-color: #e3ebd1; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-bottom: 1px solid #556b2f; font-size: 20px; font-weight: bold;">
-                                        <span class="placeholder-text" style="color:#aaa; font-size:14px; font-weight:normal;">[Drop Net Amount]</span>
-                                    </div>
-                                    <div style="padding: 15px; text-align:center; font-style:italic;">
-                                        <span class="placeholder-text" style="color:#aaa; font-style:normal;">[Drop Amount in Words]</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- STRUCTURAL SKELETON (Paybooks Inspired - Template 2) -->
-                <div class="skeleton-grid" id="template-2" style="display:none;">
-                    <div style="padding: 20px; border: 1px solid #dcdcdc;">
-                        <!-- Header -->
-                        <div style="display:flex; margin-bottom: 20px; min-height: 100px;">
-                            <div style="width: 30%; display:flex; align-items:center; justify-content:center;">
-                                <div style="width: 50px; height: 50px; background-color: #a4c639; border-radius: 50%; display:flex; align-items:center; justify-content:center; color:white; font-size:24px; margin-right:15px;">
-                                    <i class="bi bi-buildings"></i>
-                                </div>
-                                <span class="placeholder-text" style="color:#aaa; font-size:18px;">[Logo]</span>
-                            </div>
-                            <div style="width: 70%; padding-left: 20px;">
-                                <div style="font-size:18px; font-weight:bold; margin-bottom:5px;">PAYBOOKS DEMO COMPANY</div>
-                                <div style="font-size:14px; color:#555;">23, 1st Main Road, Ganganagar, Behind CBI Office on Bellary Road</div>
-                                <div style="font-size:14px; color:#555;">Bangalore - 560032</div>
-                                <div style="font-size:14px; color:#555; margin-top:5px;">Payslip for <span class="placeholder-text" style="color:#aaa;">[Month Year]</span></div>
+                                <div style="color: #4a86e8; font-size: 11px; font-style: italic;">swift > smart > secure</div>
                             </div>
                         </div>
 
-                        <!-- Employee Details Box -->
-                        <div style="border: 1px solid #333; display:flex; margin-bottom: 20px;">
-                            <div style="width: 50%; border-right: 1px solid #333; padding: 10px; min-height:120px;">
-                                <span class="placeholder-text" style="color:#aaa;">[Drop Employee ID, Name, Dept, etc.]</span>
-                            </div>
-                            <div style="width: 50%; padding: 10px; min-height:120px;">
-                                <span class="placeholder-text" style="color:#aaa;">[Drop PF No, Bank A/C No, etc.]</span>
-                            </div>
+                        <!-- Company Header -->
+                        <div contenteditable="true" style="border: 1px solid #000; text-align: center; font-size: 18px; font-weight: bold; border-bottom: none; padding: 5px;">
+                            Maxworth Electronic Systems Pvt Ltd
                         </div>
-
-                        <!-- Earnings & Deductions Table -->
-                        <div style="border: 1px solid #333;">
-                            <!-- Table Header -->
-                            <div style="display:flex; border-bottom: 1px solid #333; font-weight:bold; font-size:14px;">
-                                <div style="width: 25%; padding: 8px; border-right: 1px solid #333;">Earnings</div>
-                                <div style="width: 25%; padding: 8px; border-right: 1px solid #333; text-align:right;">Amount (Rs)</div>
-                                <div style="width: 25%; padding: 8px; border-right: 1px solid #333;">Deductions</div>
-                                <div style="width: 25%; padding: 8px; text-align:right;">Amount (Rs)</div>
-                            </div>
-
-                            <!-- Table Body -->
-                            <div style="display:flex; min-height: 250px; border-bottom: 1px solid #333;">
-                                <div style="width: 25%; border-right: 1px solid #333; padding: 10px;"></div>
-                                <div style="width: 25%; border-right: 1px solid #333; padding: 10px;"></div>
-                                <div style="width: 25%; border-right: 1px solid #333; padding: 10px;"></div>
-                                <div style="width: 25%; padding: 10px;"></div>
-                            </div>
-
-                            <!-- Totals Row -->
-                            <div style="display:flex; font-weight:bold; font-size:14px; border-bottom: 1px solid #333;">
-                                <div style="width: 25%; padding: 8px; border-right: 1px solid #333;"></div>
-                                <div style="width: 25%; padding: 8px; border-right: 1px solid #333; text-align:right;">
-                                    <span class="placeholder-text" style="color:#aaa; font-weight:normal;">[Total Earnings]</span>
-                                </div>
-                                <div style="width: 25%; padding: 8px; border-right: 1px solid #333;"></div>
-                                <div style="width: 25%; padding: 8px; text-align:right;">
-                                    <span class="placeholder-text" style="color:#aaa; font-weight:normal;">[Total Deductions]</span>
-                                </div>
-                            </div>
+                        <div contenteditable="true" style="border: 1px solid #000; border-top: none; text-align: center; font-size: 12px; border-bottom: none; padding: 5px;">
+                            909, Shahpuri Tirath Singh Tower, C-58, Community Centre, Pankha Road, New Delhi - 110058
                         </div>
-
-                        <!-- Footer / Net Pay -->
-                        <div style="border: 1px solid #333; border-top: none; padding: 15px; font-size:14px; min-height:100px;">
-                             <span class="placeholder-text" style="color:#aaa;">[Drop Net Pay, Amount in Words, Mode of Payment]</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- STRUCTURAL SKELETON (Zylker Inspired - Template 3) -->
-                <div class="skeleton-grid" id="template-3" style="display:none;">
-                    <div style="padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                        <!-- Header -->
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 20px;">
-                            <div>
-                                <div style="font-size:26px; font-weight:bold; color:#222;">Zylker</div>
-                                <div style="font-size:16px; color:#444;">Kerala India</div>
-                            </div>
-                            <div style="display:flex; gap:4px;">
-                                <div style="width:20px; height:20px; border:3px solid #e74c3c; border-radius:4px;"></div>
-                                <div style="width:20px; height:20px; border:3px solid #3498db; border-radius:4px;"></div>
-                                <div style="width:20px; height:20px; border:3px solid #f1c40f; border-radius:4px;"></div>
-                                <div style="width:20px; height:20px; border:3px solid #2ecc71; border-radius:4px;"></div>
-                            </div>
+                        <div contenteditable="true" style="border: 1px solid #000; border-top: none; text-align: center; font-size: 12px; color: blue; text-decoration: underline; padding: 5px;">
+                            www.maxworthsystems.com
                         </div>
 
                         <!-- Title -->
-                        <div style="text-align:center; font-size:18px; font-weight:bold; padding: 10px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee; margin-bottom: 20px;">
-                            Payslip for the month of <span class="placeholder-text" style="color:#aaa; font-weight:normal;">[Month Year]</span>
+                        <div contenteditable="true" style="border: 1px solid #000; text-align: center; font-weight: bold; font-size: 16px; padding: 8px;">
+                            Salary Slip
                         </div>
 
-                        <!-- Employee Pay Summary -->
-                        <div style="font-size:14px; font-weight:bold; margin-bottom: 10px; color:#333;">EMPLOYEE PAY SUMMARY</div>
-                        <div style="display:flex; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 20px;">
-                            <div style="width: 50%; padding-right: 20px; min-height: 100px;">
-                                <span class="placeholder-text" style="color:#aaa;">[Drop Name, Designation, Date of Joining, etc.]</span>
+                        <!-- Details 4-Column Grid -->
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Employee ID:</span></div>
+                            <div class="drop-target" id="tpl-emp-id" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:center; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop ID]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Salary for Month</span></div>
+                            <div class="drop-target" id="tpl-month" contenteditable="true" style="width: 25%; padding: 5px; text-align:right; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Month]</span></div>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Employee Name:</span></div>
+                            <div class="drop-target" id="tpl-emp-name" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:center; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Name]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Total Month Days</span></div>
+                            <div contenteditable="true" style="width: 25%; padding: 5px; text-align:right;">31</div>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Department/Designatio</span></div>
+                            <div class="drop-target" id="tpl-dept" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:center; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Dept]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Total Days Paid</span></div>
+                            <div class="drop-target" id="tpl-paid-days" contenteditable="true" style="width: 25%; padding: 5px; text-align:right; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Days]</span></div>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Date of Joining</span></div>
+                            <div class="drop-target" id="tpl-doj" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:center; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop DOJ]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">CL Balance</span></div>
+                            <div id="tpl-cl-bal" contenteditable="true" style="width: 25%; padding: 5px; text-align:right;">0</div>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">UAN No.</span></div>
+                            <div class="drop-target" id="tpl-uan" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:center; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop UAN]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">EL Balance</span></div>
+                            <div id="tpl-el-bal" contenteditable="true" style="width: 25%; padding: 5px; text-align:right;">0</div>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000; border-bottom: 2px solid #000;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">Bank A/c No.</span></div>
+                            <div class="drop-target" id="tpl-acc" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:center; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Account]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; font-size:12px; font-weight:bold;"><span class="movable-label" style="display:inline-block; cursor:move;">SL Balance</span></div>
+                            <div id="tpl-sl-bal" contenteditable="true" style="width: 25%; padding: 5px; text-align:right;">0</div>
+                        </div>
+
+                        <!-- Earnings & Deductions Headers -->
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; font-weight:bold; font-size:14px; margin-top:-1px;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px;"><span class="movable-label" style="display:inline-block; cursor:move;">Earnings</span></div>
+                            <div style="width: 25%; border-right: 1px solid #000; padding: 5px;"></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px;"><span class="movable-label" style="display:inline-block; cursor:move;">Deductions</span></div>
+                            <div style="width: 25%; padding: 5px;"></div>
+                        </div>
+
+                        <!-- Earnings / Deductions Body Space -->
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000; min-height: 250px;">
+                            <div class="drop-target" id="tpl-earn-lbls" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 10px;">
+                                <span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Earning Labels]</span>
                             </div>
-                            <div style="width: 50%; min-height: 100px;">
-                                <span class="placeholder-text" style="color:#aaa;">[Drop Employee No, etc.]</span>
+                            <div class="drop-target" id="tpl-earn-amts" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 10px; text-align:right;">
+                                <span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Amounts]</span>
+                            </div>
+                            <div class="drop-target" id="tpl-ded-lbls" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 10px;">
+                                <span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Deduction Labels]</span>
+                            </div>
+                            <div class="drop-target" id="tpl-ded-amts" contenteditable="true" style="width: 25%; padding: 10px; text-align:right;">
+                                <span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Drop Amounts]</span>
                             </div>
                         </div>
 
-                        <!-- Main Table -->
-                        <div style="border: 1px solid #eee;">
-                            <!-- Header -->
-                            <div style="display:flex; background-color:#f9f9f9; border-bottom: 1px solid #eee; font-weight:bold; font-size:13px; color:#555;">
-                                <div style="width: 25%; padding: 10px;">EARNINGS</div>
-                                <div style="width: 15%; padding: 10px; text-align:right;">AMOUNT</div>
-                                <div style="width: 10%; padding: 10px; text-align:right;">YTD</div>
-                                <div style="width: 25%; padding: 10px; border-left: 1px solid #eee; padding-left: 15px;">DEDUCTIONS</div>
-                                <div style="width: 15%; padding: 10px; text-align:right;">AMOUNT</div>
-                                <div style="width: 10%; padding: 10px; text-align:right;">YTD</div>
-                            </div>
+                        <!-- Totals -->
+                        <div style="display:flex; border: 1px solid #000; font-weight:bold;">
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px;"><span class="movable-label" style="display:inline-block; cursor:move;">Total Earnings</span></div>
+                            <div class="drop-target" id="tpl-earn-total" contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px; text-align:right; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Earnings Total]</span></div>
+                            <div contenteditable="true" style="width: 25%; border-right: 1px solid #000; padding: 5px;"><span class="movable-label" style="display:inline-block; cursor:move;">Total Deduction</span></div>
+                            <div class="drop-target" id="tpl-ded-total" contenteditable="true" style="width: 25%; padding: 5px; text-align:right; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Deductions Total]</span></div>
+                        </div>
 
-                            <!-- Body -->
-                            <div style="display:flex; min-height: 300px; border-bottom: 1px solid #eee;">
-                                <div style="width: 25%; padding: 10px;"></div>
-                                <div style="width: 15%; padding: 10px;"></div>
-                                <div style="width: 10%; padding: 10px;"></div>
-                                <div style="width: 25%; padding: 10px; border-left: 1px solid #eee;"></div>
-                                <div style="width: 15%; padding: 10px;"></div>
-                                <div style="width: 10%; padding: 10px;"></div>
-                            </div>
-
-                            <!-- Totals -->
-                            <div style="display:flex; background-color:#fcfcfc; border-bottom: 1px solid #eee; font-weight:bold; font-size:14px; padding: 10px 0;">
-                                <div style="width: 25%; padding: 0 10px;">Gross Earnings</div>
-                                <div style="width: 25%; padding: 0 10px; text-align:right;">
-                                    <span class="placeholder-text" style="color:#aaa; font-weight:normal;">[Total Earnings]</span>
-                                </div>
-                                <div style="width: 25%; padding: 0 10px; border-left: 1px solid #eee; padding-left: 15px;">Total Deductions</div>
-                                <div style="width: 25%; padding: 0 10px; text-align:right;">
-                                    <span class="placeholder-text" style="color:#aaa; font-weight:normal;">[Total Deductions]</span>
-                                </div>
-                            </div>
-
-                            <!-- Net Payable -->
-                            <div style="text-align:center; padding: 20px; background-color: #f6f6f6;">
-                                <div style="font-size: 16px;">
-                                    Total Net Payable <span style="font-weight:bold; font-size:18px;" class="placeholder-text">[Drop Net Amount]</span> 
-                                    <span style="margin-left: 10px;" class="placeholder-text">([Drop Amount in Words])</span>
-                                </div>
-                                <div style="color:#888; font-size:12px; margin-top:5px;">**Total Net Payable = Gross Earnings - Total Deductions</div>
-                            </div>
+                        <!-- Net Pay -->
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-bottom: 1px solid #000;">
+                            <div contenteditable="true" style="width: 25%; padding: 5px; font-weight:bold; text-decoration:underline;"><span class="movable-label" style="display:inline-block; cursor:move;">Net Pay</span></div>
+                            <div style="width: 25%; padding: 5px;"></div>
+                            <div style="width: 25%; padding: 5px;"></div>
+                            <div class="drop-target" id="tpl-net-pay" contenteditable="true" style="width: 25%; padding: 5px; text-align:right; font-weight:bold; font-size:14px; min-height: 25px;"><span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Net Pay Amount]</span></div>
+                        </div>
+                        
+                        <!-- Footer Info -->
+                        <div class="drop-target" id="tpl-amt-words" contenteditable="true" style="border-left: 1px solid #000; border-right: 1px solid #000; padding: 5px; font-weight:bold; text-align:right; font-size:14px; min-height: 25px;">
+                            <span class="placeholder-text" style="color:#aaa; pointer-events:none;">[Amount in Words]</span>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;">
+                            <div contenteditable="true" style="width: 50%; padding: 5px; font-weight:bold; font-style:italic;">Place : New Delhi</div>
+                            <div style="width: 50%; padding: 5px;"></div>
+                        </div>
+                        <div style="display:flex; border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;">
+                            <div contenteditable="true" style="width: 50%; padding: 5px; font-weight:bold; font-style:italic;">Date: <span class="drop-target placeholder-text" id="tpl-pay-date" style="color:#aaa; pointer-events:none; display:inline-block; min-width:80px; min-height:16px;">[Payment Date]</span></div>
+                            <div style="width: 50%; padding: 5px;"></div>
+                        </div>
+                        <div contenteditable="true" style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000; padding: 5px; text-align:center; font-size:11px;">
+                            Note : Tax has been deducted tentatively, after considering the maximum limit of tax saving investments or
+                        </div>
+                        <div contenteditable="true" style="border: 1px solid #000; padding: 5px; text-align:center; font-weight:bold; font-size:13px;">
+                            This is a Computer Generated Slip and does not require signature.
                         </div>
                     </div>
                 </div>
@@ -404,61 +349,106 @@
         </div>
     </div>
     
-    <!-- Right Sidebar -->
+    <!-- Right Sidebar (Properties & Calculation) -->
     <div class="sidebar-right">
-        <div class="prop-section bg-light border-bottom">
-            <div class="prop-title text-primary m-0"><i class="bi bi-sliders"></i> Field Properties</div>
+        <div class="prop-section bg-light border-bottom p-2">
+            <ul class="nav nav-pills nav-fill w-100" id="right-sidebar-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active py-1 fs-7" id="calc-tab" data-bs-toggle="tab" data-bs-target="#calc-panel" type="button" role="tab"><i class="bi bi-calculator"></i> Calculation</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link py-1 fs-7" id="prop-tab" data-bs-toggle="tab" data-bs-target="#prop-panel" type="button" role="tab"><i class="bi bi-sliders"></i> Properties</button>
+                </li>
+            </ul>
         </div>
         
-        <div id="prop-empty" class="text-center py-5 text-muted">
-            <i class="bi bi-cursor fs-1"></i>
-            <p class="mt-3 fs-7 px-3">Select a dropped field to edit it.</p>
-        </div>
-        
-        <div id="prop-form" style="display:none;">
-            <div class="prop-section border-bottom">
-                <div class="prop-label">Label Text</div>
-                <input type="text" id="prop-lbl" class="prop-input mb-3" oninput="updateSelectedText()">
-                
-                <div class="prop-label">Value Text</div>
-                <input type="text" id="prop-val" class="prop-input" oninput="updateSelectedText()">
-                
-                <div class="form-check mt-3">
-                    <input class="form-check-input" type="checkbox" id="prop-hide-label" onchange="toggleVisibility()">
-                    <label class="form-check-label fs-7">Hide Label (Show Value Only)</label>
+        <div class="tab-content h-100">
+            <!-- Calculation Tab -->
+            <div class="tab-pane fade show active h-100" id="calc-panel" role="tabpanel">
+                <div id="calc-empty" class="text-center py-5 text-muted">
+                    <i class="bi bi-calculator fs-1"></i>
+                    <p class="mt-3 fs-7 px-3">Select an employee to see salary math.</p>
                 </div>
-                <div class="form-check mt-2">
-                    <input class="form-check-input" type="checkbox" id="prop-hide-value" onchange="toggleVisibility()">
-                    <label class="form-check-label fs-7">Hide Value (Show Label Only)</label>
+                <div id="calc-content" style="display:none; padding: 15px;">
+                    <div class="bg-primary bg-opacity-10 p-2 rounded mb-3 border border-primary-subtle">
+                        <div class="fs-7 mb-1"><strong>Position:</strong> <span id="calc-pos"></span></div>
+                        <div class="fs-7 mb-1"><strong>Month:</strong> <span id="calc-month"></span></div>
+                        <div class="fs-7 mb-1"><strong>Month Days:</strong> <span id="calc-month-days"></span></div>
+                        <div class="fs-7 mb-1 text-success"><strong>Present Days:</strong> <span id="calc-present-days" class="fw-bold"></span></div>
+                        <div class="fs-7 text-danger"><strong>Pro-rata Math:</strong> <span id="calc-factor" class="font-monospace"></span></div>
+                    </div>
+                    
+                    <h6 class="fw-bold mb-2 text-primary fs-7 border-bottom pb-1">Earnings Math</h6>
+                    <table class="table table-sm table-bordered mb-3" style="font-size: 11px;">
+                        <thead class="table-light">
+                            <tr><th>Item</th><th class="text-end">Base</th><th class="text-end">Final</th></tr>
+                        </thead>
+                        <tbody id="calc-earn-body"></tbody>
+                    </table>
+
+                    <h6 class="fw-bold mb-2 text-danger fs-7 border-bottom pb-1">Deductions Math</h6>
+                    <table class="table table-sm table-bordered" style="font-size: 11px;">
+                        <thead class="table-light">
+                            <tr><th>Item</th><th class="text-end">Base</th><th class="text-end">Final</th></tr>
+                        </thead>
+                        <tbody id="calc-ded-body"></tbody>
+                    </table>
                 </div>
             </div>
             
-            <div class="prop-section">
-                <div class="prop-row">
-                    <div class="prop-field">
-                        <span class="prop-label">X Axis (px)</span>
-                        <input type="number" id="prop-x" class="prop-input">
-                    </div>
-                    <div class="prop-field">
-                        <span class="prop-label">Y Axis (px)</span>
-                        <input type="number" id="prop-y" class="prop-input">
-                    </div>
+            <!-- Properties Tab -->
+            <div class="tab-pane fade" id="prop-panel" role="tabpanel">
+                <div id="prop-empty" class="text-center py-5 text-muted">
+                    <i class="bi bi-cursor fs-1"></i>
+                    <p class="mt-3 fs-7 px-3">Select a dropped field to edit it.</p>
                 </div>
                 
-                <div class="prop-label mt-2">Font Size (px)</div>
-                <input type="number" id="prop-font" class="prop-input" value="14">
-                
-                <div class="mt-3">
-                    <label class="prop-label">Format</label>
-                    <div class="btn-group w-100">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="toggleStyle('bold')">B</button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="toggleStyle('italic')">I</button>
+                <div id="prop-form" style="display:none;">
+                    <div class="prop-section border-bottom">
+                        <div class="prop-label">Label Text</div>
+                        <input type="text" id="prop-lbl" class="prop-input mb-3" oninput="updateSelectedText()">
+                        
+                        <div class="prop-label">Value Text</div>
+                        <input type="text" id="prop-val" class="prop-input" oninput="updateSelectedText()">
+                        
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" type="checkbox" id="prop-hide-label" onchange="toggleVisibility()">
+                            <label class="form-check-label fs-7">Hide Label (Show Value Only)</label>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="prop-hide-value" onchange="toggleVisibility()">
+                            <label class="form-check-label fs-7">Hide Value (Show Label Only)</label>
+                        </div>
+                    </div>
+                    
+                    <div class="prop-section border-bottom">
+                        <div class="prop-row">
+                            <div class="prop-field">
+                                <span class="prop-label">X Axis (px)</span>
+                                <input type="number" id="prop-x" class="prop-input">
+                            </div>
+                            <div class="prop-field">
+                                <span class="prop-label">Y Axis (px)</span>
+                                <input type="number" id="prop-y" class="prop-input">
+                            </div>
+                        </div>
+                        
+                        <div class="prop-label mt-2">Font Size (px)</div>
+                        <input type="number" id="prop-font" class="prop-input" value="14">
+                        
+                        <div class="mt-3">
+                            <label class="prop-label">Format</label>
+                            <div class="btn-group w-100">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="toggleStyle('bold')">B</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="toggleStyle('italic')">I</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="prop-section mt-auto">
+                        <button class="btn btn-outline-danger w-100 btn-sm" onclick="deleteSelected()"><i class="bi bi-trash"></i> Remove from Canvas</button>
                     </div>
                 </div>
-            </div>
-            
-            <div class="prop-section mt-auto">
-                <button class="btn btn-outline-danger w-100 btn-sm" onclick="deleteSelected()"><i class="bi bi-trash"></i> Remove from Canvas</button>
             </div>
         </div>
     </div>
@@ -473,12 +463,22 @@ function changeTemplate(tempId) {
 }
 
 // Auto-fill logic
-async function fetchEmployeeData(empId) {
-    if(!empId) return;
-    document.getElementById('loading-overlay').style.display = 'flex';
+let lastFetchedEmployeeData = null;
+
+async function fetchEmployeeData() {
+    let empId = document.getElementById('emp-selector').value;
+    if (!empId) return;
     
+    let month = document.getElementById('month-selector').value;
+    let year = document.getElementById('year-selector').value;
+    
+    document.getElementById('loading-overlay').style.display = 'flex';
     try {
-        let res = await fetch('/api/employee/' + empId);
+        let url = `/api/employee/${empId}`;
+        if (month && year) {
+            url += `?month=${month}&year=${year}`;
+        }
+        const res = await fetch(url);
         let data = await res.json();
         
         let emp = data.employee;
@@ -488,12 +488,53 @@ async function fetchEmployeeData(empId) {
         document.getElementById('f-emp-id').value = emp.emp_id || '';
         document.getElementById('f-dept').value = emp.department || '';
         document.getElementById('f-desig').value = emp.title || '';
+        window.currentEmployeeDesignation = emp.title || '';
         
         let fDoj = document.getElementById('f-doj');
         if(fDoj) fDoj.value = emp.joining_date || '';
         
-        document.getElementById('f-bank').value = emp.bank_name || '';
-        document.getElementById('f-acc').value = emp.bank_account_num || '';
+        if(document.getElementById('f-month-days')) document.getElementById('f-month-days').value = emp.month_days || 31;
+        if(document.getElementById('f-paid-days')) document.getElementById('f-paid-days').value = emp.paid_days || 31;
+        if(document.getElementById('f-cl-bal')) document.getElementById('f-cl-bal').value = emp.cl_balance || 0;
+        if(document.getElementById('f-el-bal')) document.getElementById('f-el-bal').value = emp.el_balance || 0;
+        if(document.getElementById('f-sl-bal')) document.getElementById('f-sl-bal').value = emp.sl_balance || 0;
+        
+        let fBank = document.getElementById('f-bank');
+        if(fBank) fBank.value = emp.bank_name || '';
+        
+        let fUan = document.getElementById('f-uan');
+        if(fUan) fUan.value = emp.uan_number || ('100' + String(Math.floor(Math.random() * 90000000) + 10000000));
+        
+        let fMonth = document.getElementById('f-month');
+        if(fMonth) {
+            if (month && year) {
+                const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                fMonth.value = monthNames[parseInt(month)] + ' ' + year;
+            } else {
+                fMonth.value = emp.current_month || 'June 2026';
+            }
+        }
+        
+        let processedComponents = [];
+        let total_earn = 0;
+        let total_ded = 0;
+        
+        // Save to global for right sidebar calculation
+        lastFetchedEmployeeData = data;
+        
+        // Auto-generate serial and dates
+        let d = new Date();
+        let payslipNo = "PSL-" + d.getFullYear() + "-" + String(Math.floor(Math.random() * 900000) + 100000);
+        let genDate = d.toLocaleDateString();
+        let genTime = d.toLocaleTimeString();
+        let currentYear = d.getFullYear();
+        
+        if(!document.getElementById('tpl-payslip-no')) {
+            document.querySelector('.a4-canvas').insertAdjacentHTML('afterbegin', `<div style="text-align:right; font-size:10px; color:#555; margin-bottom:5px;">Payslip No: <span id="tpl-payslip-no">${payslipNo}</span> | Generated: <span id="tpl-gen-date">${genDate} ${genTime}</span></div>`);
+        } else {
+            document.getElementById('tpl-payslip-no').innerText = payslipNo;
+            document.getElementById('tpl-gen-date').innerText = genDate + " " + genTime;
+        }
         
         let ifscInput = document.getElementById('f-ifsc');
         if(ifscInput) ifscInput.value = emp.ifsc_code || '';
@@ -512,9 +553,6 @@ async function fetchEmployeeData(empId) {
         let fAddress = document.getElementById('f-address');
         if(fAddress) fAddress.value = emp.company_address || '123 Tech Park';
         
-        let fMonth = document.getElementById('f-month');
-        if(fMonth && currentMonth) fMonth.value = currentMonth;
-        
         let fBasic = document.getElementById('f-basic');
         if(fBasic) fBasic.value = emp.basic_salary || '0';
         
@@ -522,33 +560,121 @@ async function fetchEmployeeData(empId) {
         document.getElementById('earnings-list').innerHTML = '';
         document.getElementById('deductions-list').innerHTML = '';
         
-        // Add Basic Salary
-        let basicHtml = `
-            <div class="field-row drag-source">
-                <i class="bi bi-list field-drag"></i>
-                <div class="field-input-wrap border-success">
-                    <input type="text" class="field-label-input bg-light" value="Basic Salary">
-                    <input type="text" class="field-value-input" value="${emp.basic_salary || '0'}">
-                </div>
-            </div>`;
-        document.getElementById('earnings-list').insertAdjacentHTML('beforeend', basicHtml);
+        const FIXED_EARNINGS = ["Basic", "HRA", "Special Allowance", "Arrear", "Special Incentive", "Conveyance", "Leave encashment", "Bonus"];
+        const FIXED_DEDUCTIONS = ["ESI", "PF", "TDS", "Loan", "Professional Tax", "Other Deduction", "Late coming/Unapproved", "TDS excess deduction Arrears"];
 
-        // Add Components
-        let total_earn = parseFloat(emp.basic_salary || 0);
-        let total_ded = 0;
+        total_earn = 0;
+        total_ded = 0;
         
-        if(data.components) {
+        let earnLabels = '';
+        let earnAmts = '';
+        let dedLabels = '';
+        let dedAmts = '';
+        
+        processedComponents = [];
+
+        function getAliases(label) {
+            let l = label.toLowerCase();
+            if (l === 'hra') return ['hra', 'house rent'];
+            if (l === 'arrear') return ['arrear', 'arrears'];
+            if (l === 'conveyance') return ['conveyance', 'transport', 'travel'];
+            if (l === 'pf') return ['pf', 'provident fund'];
+            if (l === 'tds') return ['tds', 'income tax'];
+            if (l === 'esi') return ['esi', 'insurance', 'medical'];
+            return [l];
+        }
+
+        function matchComponent(components, typeCode, aliases) {
+            if(!components) return null;
+            return components.find(c => {
+                if (c.component_code !== typeCode) return false;
+                let cname = c.component_name.toLowerCase();
+                return aliases.some(alias => cname.includes(alias) || cname === alias);
+            });
+        }
+
+        // Build Earnings
+        FIXED_EARNINGS.forEach(label => {
+            let amt = 0;
+            if (label === 'Basic') {
+                amt = parseFloat(emp.basic_salary || 0);
+            } else {
+                let aliases = getAliases(label);
+                let comp = matchComponent(data.components, 1, aliases);
+                if (comp) {
+                    amt = parseFloat(comp.amount || 0);
+                    processedComponents.push(comp.component_name);
+                }
+            }
+            addFieldWithValue('earnings-list', label, amt.toFixed(2));
+            total_earn += amt;
+        });
+
+        // Build Deductions
+        FIXED_DEDUCTIONS.forEach(label => {
+            let amt = 0;
+            let aliases = getAliases(label);
+            let comp = matchComponent(data.components, 2, aliases);
+            if (comp) {
+                amt = parseFloat(comp.amount || 0);
+                processedComponents.push(comp.component_name);
+            } else {
+                if (label === 'PF') {
+                    let basic = parseFloat(emp.basic_salary || 0);
+                    amt = basic > 0 ? Math.min(basic * 0.12, 1800.0) : 0;
+                } else if (label === 'ESI') {
+                    // ESI needs gross, approximate if missing
+                    let gross = parseFloat(emp.gross_salary || (parseFloat(emp.basic_salary || 0) * 1.5));
+                    amt = (gross > 0 && gross <= 21000) ? (gross * 0.0075) : 0;
+                } else if (label === 'TDS') {
+                    let gross = parseFloat(emp.gross_salary || (parseFloat(emp.basic_salary || 0) * 1.5));
+                    amt = gross > 40000 ? (gross * 0.05) : 0;
+                }
+            }
+            addFieldWithValue('deductions-list', label, amt.toFixed(2));
+            total_ded += amt;
+        });
+        
+        // Add any remaining components from the database not in the fixed list
+        if (data.components) {
             data.components.forEach(c => {
-                let isEarn = c.component_code === 1;
-                let listId = isEarn ? 'earnings-list' : 'deductions-list';
-                addFieldWithValue(listId, c.component_name, c.amount);
-                
-                if(isEarn) total_earn += parseFloat(c.amount);
-                else total_ded += parseFloat(c.amount);
+                if (!processedComponents.includes(c.component_name)) {
+                    let amt = parseFloat(c.amount || 0);
+                    let isEarn = c.component_code === 1;
+                    if (isEarn) {
+                        addFieldWithValue('earnings-list', c.component_name, amt.toFixed(2));
+                        total_earn += amt;
+                    } else {
+                        addFieldWithValue('deductions-list', c.component_name, amt.toFixed(2));
+                        total_ded += amt;
+                    }
+                }
             });
         }
         
         document.getElementById('f-net').value = (total_earn - total_ded).toFixed(2);
+        
+        // Clear containers so recalculateFinancials builds them as movable labels
+        if(document.getElementById('tpl-earn-lbls')) document.getElementById('tpl-earn-lbls').innerHTML = '';
+        if(document.getElementById('tpl-earn-amts')) document.getElementById('tpl-earn-amts').innerHTML = '';
+        if(document.getElementById('tpl-ded-lbls')) document.getElementById('tpl-ded-lbls').innerHTML = '';
+        if(document.getElementById('tpl-ded-amts')) document.getElementById('tpl-ded-amts').innerHTML = '';
+        
+        // Force sync to build the template
+        recalculateFinancials();
+        let bankRow = document.getElementById('f-bank');
+        if(bankRow) bankRow.value = emp.bank_name || '';
+        let accRow = document.getElementById('f-acc');
+        if(accRow) accRow.value = emp.bank_account_num || '';
+        
+        // Dispatch inputs to trigger regular bindLiveUpdate
+        ['f-month', 'f-month-days', 'f-paid-days', 'f-cl-bal', 'f-el-bal', 'f-sl-bal', 'f-pay-date', 'f-acc'].forEach(id => {
+            let el = document.getElementById(id);
+            if(el) el.dispatchEvent(new Event('input'));
+        });
+
+        // Update Calculation Panel
+        updateSalaryCalculationPanel();
         
         // Rebind drag sources
         bindDragSources();
@@ -558,7 +684,60 @@ async function fetchEmployeeData(empId) {
         alert('Failed to load employee data.');
     } finally {
         document.getElementById('loading-overlay').style.display = 'none';
+        ['f-emp-id', 'f-emp-name', 'f-dept', 'f-doj', 'f-uan', 'f-acc'].forEach(id => {
+            let el = document.getElementById(id);
+            if(el) el.dispatchEvent(new Event('input'));
+        });
     }
+}
+
+function updateSalaryCalculationPanel() {
+    if (!lastFetchedEmployeeData || !lastFetchedEmployeeData.employee) return;
+    
+    document.getElementById('calc-empty').style.display = 'none';
+    document.getElementById('calc-content').style.display = 'block';
+    
+    let emp = lastFetchedEmployeeData.employee;
+    let data = lastFetchedEmployeeData;
+    
+    document.getElementById('calc-pos').innerText = emp.designation || 'N/A';
+    document.getElementById('calc-month').innerText = document.getElementById('f-month').value || 'N/A';
+    
+    let monthDays = parseFloat(emp.month_days) || 31;
+    let paidDays = parseFloat(emp.paid_days) || 0;
+    
+    document.getElementById('calc-month-days').innerText = monthDays;
+    document.getElementById('calc-present-days').innerText = paidDays;
+    
+    let factor = monthDays > 0 ? (paidDays / monthDays) : 0;
+    document.getElementById('calc-factor').innerText = `(Base / ${monthDays}) * ${paidDays} = ${factor.toFixed(4)}`;
+    
+    let earnHtml = '';
+    let dedHtml = '';
+    
+    const formatAmt = (amt) => amt.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    
+    // Earnings Math
+    let baseBasic = parseFloat(emp.basic_salary) || 0;
+    let finalBasic = baseBasic * factor;
+    earnHtml += `<tr><td>Basic Salary</td><td class="text-end text-muted">${formatAmt(baseBasic)}</td><td class="text-end fw-bold text-success">${formatAmt(finalBasic)}</td></tr>`;
+    
+    // Build from components
+    if (data.components) {
+        data.components.forEach(c => {
+            let baseAmt = parseFloat(c.amount || 0);
+            let finalAmt = baseAmt * factor;
+            let row = `<tr><td>${c.component_name}</td><td class="text-end text-muted">${formatAmt(baseAmt)}</td><td class="text-end fw-bold">${formatAmt(finalAmt)}</td></tr>`;
+            if (c.component_code === 1) {
+                earnHtml += row;
+            } else if (c.component_code === 2) {
+                dedHtml += row;
+            }
+        });
+    }
+    
+    document.getElementById('calc-earn-body').innerHTML = earnHtml;
+    document.getElementById('calc-ded-body').innerHTML = dedHtml;
 }
 
 function addFieldWithValue(listId, lbl, val) {
@@ -567,13 +746,166 @@ function addFieldWithValue(listId, lbl, val) {
         <div class="field-row drag-source">
             <i class="bi bi-list field-drag"></i>
             <div class="field-input-wrap ${borderCls}">
-                <input type="text" class="field-label-input bg-light" value="${lbl}">
-                <input type="text" class="field-value-input" value="${val}">
+                <input type="text" class="field-label-input bg-light" value="${lbl}" oninput="recalculateFinancials()">
+                <input type="text" class="field-value-input" value="${val}" oninput="recalculateFinancials()">
             </div>
         </div>
     `;
     document.getElementById(listId).insertAdjacentHTML('beforeend', html);
 }
+
+function recalculateFinancials() {
+    let total_earn = 0;
+    let total_ded = 0;
+    
+    let fMonthDays = document.getElementById('f-month-days');
+    let fPaidDays = document.getElementById('f-paid-days');
+    let monthDays = fMonthDays ? (parseFloat(fMonthDays.value) || 31) : 31;
+    let paidDays = fPaidDays ? (parseFloat(fPaidDays.value) || monthDays) : monthDays;
+    
+    let desig = window.currentEmployeeDesignation || '';
+    let proRataFactor = 1;
+    let desigLower = desig.toLowerCase();
+    
+    if (desigLower.includes('director') || desigLower.includes('manager')) {
+        proRataFactor = 1;
+    } else if (desigLower.includes('intern') || desigLower.includes('trainee')) {
+        proRataFactor = paidDays / 30;
+    } else {
+        proRataFactor = monthDays > 0 ? (paidDays / monthDays) : 1;
+    }
+    
+    // Update Earnings
+    let earnIndex = 0;
+    document.querySelectorAll('#earnings-list .field-row').forEach(row => {
+        let lbl = row.querySelector('.field-label-input').value;
+        let baseVal = parseFloat(row.querySelector('.field-value-input').value || 0);
+        let val = baseVal * proRataFactor;
+        total_earn += val;
+        
+        let lblContainer = document.getElementById('tpl-earn-lbls');
+        let amtContainer = document.getElementById('tpl-earn-amts');
+        
+        if (lblContainer && amtContainer) {
+            let lblEl = document.getElementById('earn-lbl-' + earnIndex);
+            let amtEl = document.getElementById('earn-amt-' + earnIndex);
+            
+            if (lblEl) {
+                lblEl.innerHTML = lbl;
+                amtEl.innerHTML = val.toFixed(2);
+            } else {
+                lblContainer.insertAdjacentHTML('beforeend', `<div id="earn-lbl-${earnIndex}" class="movable-label" style="display:flex; align-items:center; min-height:30px; position:relative; min-width:100px; line-height:1.2; word-break:break-word;">${lbl}</div>`);
+                amtContainer.insertAdjacentHTML('beforeend', `<div id="earn-amt-${earnIndex}" class="movable-label" style="display:flex; align-items:center; min-height:30px; position:relative; min-width:50px; justify-content:flex-end;">${val.toFixed(2)}</div>`);
+            }
+        }
+        earnIndex++;
+    });
+    
+    // Update Deductions
+    let dedIndex = 0;
+    document.querySelectorAll('#deductions-list .field-row').forEach(row => {
+        let lbl = row.querySelector('.field-label-input').value;
+        let val = parseFloat(row.querySelector('.field-value-input').value || 0);
+        // Note: Deductions usually apply full pro-rata factor as well unless specifically configured otherwise.
+        let valDeducted = val * proRataFactor;
+        total_ded += valDeducted;
+        
+        let lblContainer = document.getElementById('tpl-ded-lbls');
+        let amtContainer = document.getElementById('tpl-ded-amts');
+        
+        if (lblContainer && amtContainer) {
+            let lblEl = document.getElementById('ded-lbl-' + dedIndex);
+            let amtEl = document.getElementById('ded-amt-' + dedIndex);
+            
+            if (lblEl) {
+                lblEl.innerHTML = lbl;
+                amtEl.innerHTML = valDeducted.toFixed(2);
+            } else {
+                lblContainer.insertAdjacentHTML('beforeend', `<div id="ded-lbl-${dedIndex}" class="movable-label" style="display:flex; align-items:center; min-height:30px; position:relative; min-width:100px; line-height:1.2; word-break:break-word;">${lbl}</div>`);
+                amtContainer.insertAdjacentHTML('beforeend', `<div id="ded-amt-${dedIndex}" class="movable-label" style="display:flex; align-items:center; min-height:30px; position:relative; min-width:50px; justify-content:flex-end;">${valDeducted.toFixed(2)}</div>`);
+            }
+        }
+        dedIndex++;
+    });
+    
+    // Sync heights to ensure perfectly horizontal alignment even if labels wrap
+    // Need a tiny timeout to allow the DOM to reflow and calculate offsetHeight correctly
+    setTimeout(() => {
+        for (let i = 0; i < earnIndex; i++) {
+            let lblEl = document.getElementById('earn-lbl-' + i);
+            let amtEl = document.getElementById('earn-amt-' + i);
+            if (lblEl && amtEl) {
+                // Reset heights to auto first in case it shrunk
+                lblEl.style.height = 'auto';
+                amtEl.style.height = 'auto';
+                let maxH = Math.max(lblEl.offsetHeight, amtEl.offsetHeight);
+                lblEl.style.height = maxH + 'px';
+                amtEl.style.height = maxH + 'px';
+            }
+        }
+        for (let i = 0; i < dedIndex; i++) {
+            let lblEl = document.getElementById('ded-lbl-' + i);
+            let amtEl = document.getElementById('ded-amt-' + i);
+            if (lblEl && amtEl) {
+                lblEl.style.height = 'auto';
+                amtEl.style.height = 'auto';
+                let maxH = Math.max(lblEl.offsetHeight, amtEl.offsetHeight);
+                lblEl.style.height = maxH + 'px';
+                amtEl.style.height = maxH + 'px';
+            }
+        }
+    }, 10);
+    
+    addDragHandles();
+    
+    document.getElementById('f-net').value = (total_earn - total_ded).toFixed(2);
+    
+    if(document.getElementById('tpl-earn-total')) document.getElementById('tpl-earn-total').innerHTML = total_earn.toFixed(2);
+    if(document.getElementById('tpl-ded-total')) document.getElementById('tpl-ded-total').innerHTML = total_ded.toFixed(2);
+    
+    let netPay = (total_earn - total_ded);
+    if(document.getElementById('tpl-net-pay')) document.getElementById('tpl-net-pay').innerHTML = netPay.toFixed(2);
+    if(document.getElementById('tpl-amt-words')) document.getElementById('tpl-amt-words').innerHTML = 'Rupees ' + numberToWords(Math.round(netPay));
+}
+
+function recalculateFromCanvas() {
+    let total_earn = 0;
+    let total_ded = 0;
+    
+    let earnEl = document.getElementById('tpl-earn-amts');
+    if (earnEl) {
+        let lines = earnEl.innerText.split('\n');
+        lines.forEach(line => {
+            let val = parseFloat(line.replace(/,/g, '').trim());
+            if (!isNaN(val)) total_earn += val;
+        });
+    }
+    
+    let dedEl = document.getElementById('tpl-ded-amts');
+    if (dedEl) {
+        let lines = dedEl.innerText.split('\n');
+        lines.forEach(line => {
+            let val = parseFloat(line.replace(/,/g, '').trim());
+            if (!isNaN(val)) total_ded += val;
+        });
+    }
+    
+    if(document.getElementById('tpl-earn-total')) document.getElementById('tpl-earn-total').innerHTML = total_earn.toFixed(2);
+    if(document.getElementById('tpl-ded-total')) document.getElementById('tpl-ded-total').innerHTML = total_ded.toFixed(2);
+    
+    let netPay = (total_earn - total_ded);
+    if(document.getElementById('tpl-net-pay')) document.getElementById('tpl-net-pay').innerHTML = netPay.toFixed(2);
+    if(document.getElementById('tpl-amt-words')) document.getElementById('tpl-amt-words').innerHTML = 'Rupees ' + numberToWords(Math.round(netPay));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    let earnAmts = document.getElementById('tpl-earn-amts');
+    if(earnAmts) earnAmts.addEventListener('input', recalculateFromCanvas);
+    let dedAmts = document.getElementById('tpl-ded-amts');
+    if(dedAmts) dedAmts.addEventListener('input', recalculateFromCanvas);
+    
+    addDragHandles();
+});
 
 // Visuals & Logic
 let currentZoom = 1;
@@ -612,15 +944,18 @@ document.addEventListener('keydown', function(e) {
 let selectedEl = null;
 
 function selectElement(el) {
-    if(selectedEl) selectedEl.classList.remove('selected');
+    if(selectedEl) {
+        selectedEl.classList.remove('selected');
+    }
     selectedEl = el;
-    el.classList.add('selected');
+    selectedEl.classList.add('selected');
     
     document.getElementById('prop-empty').style.display = 'none';
     document.getElementById('prop-form').style.display = 'block';
     
-    document.getElementById('prop-x').value = Math.round(parseFloat(el.getAttribute('data-x')) || 0);
-    document.getElementById('prop-y').value = Math.round(parseFloat(el.getAttribute('data-y')) || 0);
+    // Switch to Properties Tab automatically
+    let propTab = new bootstrap.Tab(document.getElementById('prop-tab'));
+    propTab.show();
     
     let lblNode = el.querySelector('.c-label');
     let valNode = el.querySelector('.c-value');
@@ -633,7 +968,7 @@ function selectElement(el) {
     
     let fontSize = window.getComputedStyle(el).fontSize;
     document.getElementById('prop-font').value = parseInt(fontSize);
-}
+};
 
 function updateSelectedText() {
     if(selectedEl) {
@@ -715,7 +1050,20 @@ function deleteSelected() {
     }
 }
 
+function addDragHandles() {
+    document.querySelectorAll('.movable-label').forEach(el => {
+        if(!el.querySelector('.drag-handle')) {
+            el.insertAdjacentHTML('afterbegin', `<span class="drag-handle" contenteditable="false" style="cursor:grab; color:#ccc; margin-right:4px; font-size:14px; user-select:none;" title="Drag to move or swap">&#10021;</span>`);
+            el.style.cursor = 'text'; // Make the rest of the label editable cursor
+        }
+    });
+}
+
 function rebindCanvasElements() {
+    interact('.canvas-field').on('tap', function(event) {
+        selectElement(event.currentTarget);
+    });
+
     interact('.canvas-field')
         .draggable({
             listeners: {
@@ -754,6 +1102,52 @@ function rebindCanvasElements() {
                     target.style.transform = `translate(${x}px, ${y}px)`;
                     target.setAttribute('data-x', x);
                     target.setAttribute('data-y', y);
+                }
+            }
+        });
+
+    interact('.movable-label')
+        .draggable({
+            allowFrom: '.drag-handle',
+            listeners: {
+                start() { saveState(); },
+                move(event) {
+                    var target = event.target;
+                    var x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx / currentZoom;
+                    var y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy / currentZoom;
+
+                    target.style.transform = `translate(${x}px, ${y}px)`;
+                    target.setAttribute('data-x', x);
+                    target.setAttribute('data-y', y);
+                }
+            }
+        })
+        .dropzone({
+            accept: '.movable-label',
+            overlap: 0.5,
+            ondrop: function(event) {
+                let dragged = event.relatedTarget;
+                let target = event.target;
+                
+                if (dragged !== target) {
+                    let marker1 = document.createElement('div');
+                    let marker2 = document.createElement('div');
+                    dragged.parentNode.insertBefore(marker1, dragged);
+                    target.parentNode.insertBefore(marker2, target);
+                    
+                    marker1.parentNode.insertBefore(target, marker1);
+                    marker2.parentNode.insertBefore(dragged, marker2);
+                    
+                    marker1.parentNode.removeChild(marker1);
+                    marker2.parentNode.removeChild(marker2);
+                    
+                    dragged.style.transform = 'none';
+                    dragged.setAttribute('data-x', 0);
+                    dragged.setAttribute('data-y', 0);
+                    
+                    target.style.transform = 'none';
+                    target.setAttribute('data-x', 0);
+                    target.setAttribute('data-y', 0);
                 }
             }
         });
@@ -798,8 +1192,151 @@ function bindDragSources() {
     });
 }
 
+
+function numberToWords(num) {
+    if(num === 0) return 'Zero';
+    var a = ['','One ','Two ','Three ','Four ', 'Five ','Six ','Seven ','Eight ','Nine ','Ten ','Eleven ','Twelve ','Thirteen ','Fourteen ','Fifteen ','Sixteen ','Seventeen ','Eighteen ','Nineteen '];
+    var b = ['', '', 'Twenty','Thirty','Forty','Fifty', 'Sixty','Seventy','Eighty','Ninety'];
+    if ((num = num.toString()).length > 9) return 'overflow';
+    n = ('000000000' + num).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+    if (!n) return; var str = '';
+    str += (n[1] != 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'Crore ' : '';
+    str += (n[2] != 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'Lakh ' : '';
+    str += (n[3] != 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'Thousand ' : '';
+    str += (n[4] != 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'Hundred ' : '';
+    str += (n[5] != 0) ? ((str != '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) + 'Only' : '';
+    return str.trim() + ' Only';
+}
+
+
 saveState();
 rebindCanvasElements();
 bindDragSources();
+function bindLiveUpdate(inputId, tplId, placeholderText) {
+    let input = document.getElementById(inputId);
+    let tpl = document.getElementById(tplId);
+    if(input && tpl) {
+        input.addEventListener('input', function() {
+            if(this.value.trim() !== '') {
+                tpl.innerHTML = `<span class="movable-label c-value" style="color:#000; display:inline-block; position:relative;">${this.value}</span>`;
+                addDragHandles();
+            } else {
+                tpl.innerHTML = `<span class="placeholder-text" style="color:#aaa; pointer-events:none;">${placeholderText}</span>`;
+            }
+        });
+    }
+}
+
+bindLiveUpdate('f-emp-id', 'tpl-emp-id', '[Drop ID]');
+bindLiveUpdate('f-emp-name', 'tpl-emp-name', '[Drop Name]');
+bindLiveUpdate('f-dept', 'tpl-dept', '[Drop Dept]');
+bindLiveUpdate('f-doj', 'tpl-doj', '[Drop DOJ]');
+bindLiveUpdate('f-uan', 'tpl-uan', '[Drop UAN]');
+bindLiveUpdate('f-acc', 'tpl-acc', '[Drop Account]');
+
+bindLiveUpdate('f-month', 'tpl-month', '[Month]');
+bindLiveUpdate('f-month-days', 'tpl-month-days', '[Month Days]');
+bindLiveUpdate('f-paid-days', 'tpl-paid-days', '[Days]');
+bindLiveUpdate('f-cl-bal', 'tpl-cl-bal', '0');
+bindLiveUpdate('f-el-bal', 'tpl-el-bal', '0');
+bindLiveUpdate('f-sl-bal', 'tpl-sl-bal', '0');
+bindLiveUpdate('f-pay-date', 'tpl-pay-date', '[Payment Date]');
+
+document.getElementById('f-month-days').addEventListener('input', recalculateFinancials);
+document.getElementById('f-paid-days').addEventListener('input', recalculateFinancials);
+
+function printPayslip() {
+    let canvas = document.getElementById('canvas');
+    let originalTransform = canvas.style.transform;
+    canvas.style.transform = 'none';
+    
+    let printWin = window.open('', '_blank');
+    printWin.document.write('<html><head><title>Print Payslip</title>');
+    let styles = document.querySelectorAll('style, link[rel="stylesheet"]');
+    styles.forEach(s => printWin.document.write(s.outerHTML));
+    printWin.document.write('</head><body style="background:white; margin:0; padding:20px;">');
+    printWin.document.write(canvas.outerHTML);
+    printWin.document.write('</body></html>');
+    printWin.document.close();
+    printWin.focus();
+    
+    setTimeout(() => {
+        printWin.print();
+        printWin.close();
+        canvas.style.transform = originalTransform;
+    }, 500);
+}
+
+function downloadPDF() {
+    let canvas = document.getElementById('canvas');
+    let originalTransform = canvas.style.transform;
+    canvas.style.transform = 'none';
+    
+    let opt = {
+      margin:       10,
+      filename:     (document.getElementById('tpl-payslip-no')?.innerText || 'Payslip') + '.pdf',
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(canvas).save().then(() => {
+        canvas.style.transform = originalTransform;
+    });
+}
+
+async function saveTemplate() {
+    let templateName = prompt("Enter a name for this Payslip Template:");
+    if(!templateName) return;
+    
+    let canvas = document.getElementById('canvas');
+    let layoutHtml = canvas.innerHTML;
+    
+    try {
+        let res = await fetch('/api/templates/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                template_name: templateName,
+                layout_json: layoutHtml
+            })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert('Template Saved Successfully!');
+        } else {
+            alert('Error saving template: ' + data.error);
+        }
+    } catch(err) {
+        console.error(err);
+        alert('Failed to save template.');
+    }
+}
+
+async function loadTemplate() {
+    try {
+        let res = await fetch('/api/templates/load');
+        let data = await res.json();
+        
+        if(data.templates && data.templates.length > 0) {
+            let names = data.templates.map((t, i) => `${i+1}. ${t.template_name}`).join('\\n');
+            let sel = prompt("Select Template Number to load:\\n" + names);
+            let idx = parseInt(sel) - 1;
+            
+            if(data.templates[idx]) {
+                document.getElementById('canvas').innerHTML = data.templates[idx].layout_json;
+                bindDragSources();
+                rebindCanvasElements();
+                alert('Template Loaded!');
+            }
+        } else {
+            alert("No templates found.");
+        }
+    } catch(err) {
+        console.error(err);
+        alert("Failed to load templates.");
+    }
+}
+
 </script>
 {% endblock %}
