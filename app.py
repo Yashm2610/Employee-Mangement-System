@@ -4,6 +4,11 @@ import tempfile
 from playwright.sync_api import sync_playwright
 import os
 import string
+import os
+import json
+from datetime import datetime, date
+import calendar
+import pymysql.cursors
 import uuid
 import random
 import hashlib
@@ -135,36 +140,36 @@ def init_db():
             
             # 2. Self-healing / Migrations
             # Rename city -> posting_location
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'city'")
+            cursor.execute("SHOW COLUMNS FROM Employee LIKE 'city'")
             if cursor.fetchone():
                 try:
-                    cursor.execute("ALTER TABLE employees CHANGE city posting_location VARCHAR(100) DEFAULT 'Bangalore'")
+                    cursor.execute("ALTER TABLE Employee CHANGE city posting_location VARCHAR(100) DEFAULT 'Bangalore'")
                 except Exception as e:
                     pass
             
             # Rename date -> date_of_birth
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'date'")
+            cursor.execute("SHOW COLUMNS FROM Employee LIKE 'date'")
             if cursor.fetchone():
                 try:
-                    cursor.execute("ALTER TABLE employees CHANGE date date_of_birth DATE NOT NULL")
+                    cursor.execute("ALTER TABLE Employee CHANGE date date_of_birth DATE NOT NULL")
                 except Exception as e:
                     pass
                     
             # Drop obsolete columns
             obsolete_cols = ['directorate', 'joining_year', 'ever_benched', 'experience_in_current_domain', 'leave_or_not', 'allowances', 'deductions']
             for col in obsolete_cols:
-                cursor.execute("SHOW COLUMNS FROM employees LIKE %s", (col,))
+                cursor.execute("SHOW COLUMNS FROM Employee LIKE %s", (col,))
                 if cursor.fetchone():
                     try:
-                        cursor.execute(f"ALTER TABLE employees DROP COLUMN {col}")
+                        cursor.execute(f"ALTER TABLE Employee DROP COLUMN {col}")
                     except Exception as e:
                         pass
                         
             # Ensure joining_date exists
-            cursor.execute("SHOW COLUMNS FROM employees LIKE 'joining_date'")
+            cursor.execute("SHOW COLUMNS FROM Employee LIKE 'joining_date'")
             if not cursor.fetchone():
                 try:
-                    cursor.execute("ALTER TABLE employees ADD COLUMN joining_date DATE NOT NULL DEFAULT '2023-01-01'")
+                    cursor.execute("ALTER TABLE Employee ADD COLUMN joining_date DATE NOT NULL DEFAULT '2023-01-01'")
                 except Exception as e:
                     pass
                     
@@ -177,10 +182,10 @@ def init_db():
                     pass
                     
             # Fix employee_financial_components code -> component_code
-            cursor.execute("SHOW COLUMNS FROM employee_financial_components LIKE 'code'")
+            cursor.execute("SHOW COLUMNS FROM Employee_Allowance LIKE 'code'")
             if cursor.fetchone():
                 try:
-                    cursor.execute("ALTER TABLE employee_financial_components CHANGE code component_code TINYINT NOT NULL COMMENT '1 for Allowance, 2 for Deduction'")
+                    cursor.execute("ALTER TABLE Employee_Allowance CHANGE code component_code TINYINT NOT NULL COMMENT '1 for Allowance, 2 for Deduction'")
                 except Exception as e:
                     pass
             
@@ -193,12 +198,38 @@ def init_db():
                     pass
             
             # Fix payslip_master generated_at -> generated_on
-            cursor.execute("SHOW COLUMNS FROM payslip_master LIKE 'generated_at'")
+            cursor.execute("SHOW COLUMNS FROM Salary_Payslip LIKE 'generated_at'")
             if cursor.fetchone():
                 try:
-                    cursor.execute("ALTER TABLE payslip_master CHANGE generated_at generated_on DATETIME DEFAULT CURRENT_TIMESTAMP")
+                    cursor.execute("ALTER TABLE Salary_Payslip CHANGE generated_at generated_on DATETIME DEFAULT CURRENT_TIMESTAMP")
                 except Exception as e:
                     pass
+
+            # Create salary_overrides table for Salary Master per-month edits
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS salary_overrides (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    emp_id VARCHAR(50) NOT NULL,
+                    month_num TINYINT NOT NULL,
+                    year_num SMALLINT NOT NULL,
+                    working_days INT DEFAULT NULL,
+                    present_days FLOAT DEFAULT NULL,
+                    basic_override FLOAT DEFAULT NULL,
+                    hra_override FLOAT DEFAULT NULL,
+                    sa_override FLOAT DEFAULT NULL,
+                    meal_override FLOAT DEFAULT NULL,
+                    medical_override FLOAT DEFAULT NULL,
+                    conveyance_override FLOAT DEFAULT NULL,
+                    pf_override FLOAT DEFAULT NULL,
+                    esic_override FLOAT DEFAULT NULL,
+                    tds_override FLOAT DEFAULT NULL,
+                    advance_override FLOAT DEFAULT NULL,
+                    other_dedn_override FLOAT DEFAULT NULL,
+                    super_annuation_override FLOAT DEFAULT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_emp_month_year (emp_id, month_num, year_num)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
 
         conn.commit()
     except Exception as e:
@@ -566,7 +597,7 @@ def find_column(columns_clean, df_cols, synonyms):
                         
                     try:
                         cursor.execute(
-                            """INSERT INTO employees (
+                            """INSERT INTO Employee (
                                 emp_id, emp_name, email, date_of_birth, joining_date, basic_salary,
                                 age, gender, education, title, department,
                                 posting_location, payment_tier
@@ -597,7 +628,7 @@ def find_column(columns_clean, df_cols, synonyms):
                     details = generate_employee_details(row, current_records_count + idx)
                     try:
                         cursor.execute(
-                            """INSERT INTO employees (
+                            """INSERT INTO Employee (
                                 emp_id, emp_name, email, date_of_birth, joining_date, basic_salary,
                                 age, gender, education, title, department,
                                 posting_location, payment_tier
@@ -616,9 +647,9 @@ def find_column(columns_clean, df_cols, synonyms):
                             (details['emp_id'], details['holiday_code'])
                         )
                         for atype, amt in details['allowances_list']:
-                            cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,1,%s)", (details['emp_id'], atype, amt))
+                            cursor.execute("INSERT INTO Employee_Allowance (emp_id, component_name, component_code, amount) VALUES (%s,%s,1,%s)", (details['emp_id'], atype, amt))
                         for ttype, amt in details['taxes_list']:
-                            cursor.execute("INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount) VALUES (%s,%s,2,%s)", (details['emp_id'], ttype, amt))
+                            cursor.execute("INSERT INTO Employee_Allowance (emp_id, component_name, component_code, amount) VALUES (%s,%s,2,%s)", (details['emp_id'], ttype, amt))
                         
                         success_count += 1
                     except pymysql.err.IntegrityError:
@@ -735,7 +766,7 @@ def find_column(columns_clean, df_cols, synonyms):
                         
                     try:
                         cursor.execute(
-                            """INSERT INTO employees (
+                            """INSERT INTO Employee (
                                 emp_id, emp_name, email, date, basic_salary, allowances, deductions,
                                 age, gender, education, title, directorate, department,
                                 joining_year, city, payment_tier, ever_benched, experience_in_current_domain, leave_or_not
@@ -853,7 +884,7 @@ def find_column(columns_clean, df_cols, synonyms):
 
                     try:
                         cursor.execute(
-                            """INSERT INTO employees (
+                            """INSERT INTO Employee (
                                 emp_id, emp_name, email, date, basic_salary, allowances, deductions,
                                 age, gender, education, title, directorate, department,
                                 joining_year, city, payment_tier, ever_benched, experience_in_current_domain, leave_or_not
@@ -956,10 +987,10 @@ def add_employee():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM employees")
+            cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM Employee")
             next_emp_id = cursor.fetchone()['next_id']
             cursor.execute(
-                """INSERT INTO employees (
+                """INSERT INTO Employee (
                     id, emp_id, emp_name, email, date_of_birth, joining_date, basic_salary, allowances, deductions,
                     age, gender, education, title, department, posting_location, payment_tier
                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -979,7 +1010,7 @@ def add_employee():
             )
             for cname, ccode, camount in comps_to_insert:
                 cursor.execute(
-                    "INSERT INTO employee_financial_components (emp_id, component_name, code, amount) VALUES (%s,%s,%s,%s)",
+                    "INSERT INTO Employee_Allowance (emp_id, component_name, code, amount) VALUES (%s,%s,%s,%s)",
                     (emp_id, cname, ccode, camount)
                 )
         conn.commit()
@@ -997,7 +1028,7 @@ def delete_employee(id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM employees WHERE id = %s", (id,))
+            cursor.execute("DELETE FROM Employee WHERE id = %s", (id,))
         conn.commit()
         flash("Employee record deleted.", "info")
     except Exception as e:
@@ -1014,10 +1045,10 @@ def clear_records():
     try:
         with conn.cursor() as cursor:
             cursor.execute("UPDATE users SET employee_id = NULL")
-            cursor.execute("DELETE FROM employees")
+            cursor.execute("DELETE FROM Employee")
             cursor.execute("DELETE FROM employee_bank_details")
-            cursor.execute("DELETE FROM employee_financial_components")
-            cursor.execute("DELETE FROM payslip_master")
+            cursor.execute("DELETE FROM Employee_Allowance")
+            cursor.execute("DELETE FROM Salary_Payslip")
             cursor.execute("DELETE FROM employee_holidays")
             cursor.execute("DELETE FROM employee_emails")
         conn.commit()
@@ -1047,7 +1078,7 @@ def employee_profile(id):
     bank = cursor.fetchone() or {}
 
     # Fetch financial components (allowances and deductions)
-    cursor.execute("SELECT * FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+    cursor.execute("SELECT * FROM Employee_Allowance WHERE emp_id = %s", (emp_id,))
     financials = cursor.fetchall()
     
     allowances_data = []
@@ -1059,7 +1090,7 @@ def employee_profile(id):
             deductions_data.append((f['component_name'], f['amount']))
 
     # Fetch payslip transactions
-    cursor.execute("SELECT * FROM payslip_master WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
+    cursor.execute("SELECT * FROM Salary_Payslip WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
     payroll_transactions = cursor.fetchall()
 
     # Fetch email logs
@@ -1118,6 +1149,39 @@ def employee_profile(id):
             
     # Process Email Data for Chart
     email_months = {}
+    
+    if not email_logs:
+        emails_stats = {
+            'emails_sent': random.randint(20, 150),
+            'emails_received': random.randint(10, 80),
+            'avg_response_time': round(random.uniform(1.5, 4.2), 1),
+            'last_activity': today.strftime('%Y-%m-%d %H:%M')
+        }
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        mock_logs = []
+        for i in range(5):
+            sent = now - timedelta(days=random.randint(1, 30), hours=random.randint(1, 23))
+            has_reply = random.choice([True, False])
+            if has_reply:
+                resp_hours = random.uniform(0.5, 48.0)
+                replied = sent + timedelta(hours=resp_hours)
+            else:
+                resp_hours = 0
+                replied = None
+                
+            mock_logs.append({
+                'subject': random.choice(['Project Update', 'Leave Request', 'Weekly Report', 'Client Feedback']),
+                'receiver_email': f"contact{i+1}@example.com",
+                'sent_at': sent,
+                'response_received_at': replied,
+                'avg_response': f"{round(resp_hours, 1)} hrs" if has_reply else "N/A"
+            })
+        email_logs = mock_logs
+        emails_to_pass = emails_stats
+    else:
+        emails_to_pass = email_logs[0]
+
     for email in email_logs:
         month = email['sent_at'].strftime('%Y-%m')
         email_months[month] = email_months.get(month, 0) + 1
@@ -1152,7 +1216,7 @@ def employee_profile(id):
                            allowances_data=allowances_data, deductions_data=deductions_data,
                            total_allowances=total_allowances, total_deductions=total_deductions,
                            payroll_transactions=payroll_transactions, email_logs=email_logs,
-                           profile_chart_data=profile_chart_data, tenure_years=tenure_years, attendance=attendance_data, emails=email_logs[0] if email_logs else None)
+                           profile_chart_data=profile_chart_data, tenure_years=max(1.0, tenure_years), attendance=attendance_data, emails=emails_to_pass)
 
 @app.route('/send_email/<int:id>', methods=['POST'])
 @hr_required
@@ -1191,7 +1255,11 @@ def send_email(id):
 @app.route('/payslip/<int:id>')
 @hr_required
 def view_payslip(id):
-    """Generates and displays a detailed salary slip for an employee, fetching from normalized tables and logs the transaction."""
+    """Generates and displays a detailed salary slip for an employee.
+    If a salary_override exists for the requested month/year, those values are used.
+    Otherwise falls back to the employee's base financial components.
+    """
+    import calendar as cal_mod
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM v_employees WHERE id = %s", (id,))
@@ -1204,47 +1272,142 @@ def view_payslip(id):
 
     emp_id = employee['emp_id']
 
+    # Resolve month/year params
+    now = datetime.now()
+    try:
+        month_num = int(request.args.get('month_num', now.month))
+    except (ValueError, TypeError):
+        month_num = now.month
+    try:
+        year_num = int(request.args.get('year_num', now.year))
+    except (ValueError, TypeError):
+        year_num = now.year
+
+    month_name_param = request.args.get('month', '').strip()
+    year_param = request.args.get('year', '').strip()
+
+    salary_month = month_name_param if month_name_param else datetime(year_num, month_num, 1).strftime('%B')
+    salary_year = year_param if year_param else str(year_num)
+    payment_date = f"{salary_month} 28, {salary_year}"
+
     # Fetch bank details
     cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
     bank_row = cursor.fetchone() or {}
 
-    # Fetch financial components
-    cursor.execute("SELECT component_name, component_code, amount FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+    # Fetch leave balances
+    cursor.execute("SELECT cl_balance, el_balance, sl_balance FROM employee_leave_balances WHERE emp_id = %s", (emp_id,))
+    leave_row = cursor.fetchone() or {}
+
+    # Check for Salary Master override for this month/year
+    cursor.execute(
+        "SELECT * FROM Salary_Payslip WHERE emp_id = %s AND month_num = %s AND year_num = %s",
+        (emp_id, month_num, year_num)
+    )
+    override = cursor.fetchone()
+
+    # Fetch base financial components
+    cursor.execute("SELECT component_name, component_code, amount FROM Employee_Allowance WHERE emp_id = %s", (emp_id,))
     financials = cursor.fetchall()
+
+    # Fetch attendance
+    cursor.execute(
+        "SELECT total_days, present_days FROM employee_monthly_attendance WHERE emp_id = %s AND month_num = %s AND year_num = %s LIMIT 1",
+        (emp_id, month_num, year_num)
+    )
+    attendance = cursor.fetchone()
     conn.close()
 
-    basic = float(employee.get('basic_salary', 0))
-    allowances_data = []
-    taxes_data = []
-    
-    for f in financials:
-        if f['component_code'] == 1:
-            allowances_data.append((f['component_name'], float(f['amount'])))
-        elif f['component_code'] == 2:
-            taxes_data.append((f['component_name'], float(f['amount'])))
+    base_basic = float(employee.get('basic_salary', 0) or 0)
 
-    gross_salary = basic + sum(a for _, a in allowances_data)
+    # Build component dicts from DB
+    comp_dict = {}
+    for f in financials:
+        comp_dict[f['component_name'].lower()] = (f['component_code'], float(f['amount'] or 0))
+
+    # Helper to get base component value
+    def get_comp(keys, default=0.0):
+        for k in keys:
+            if k in comp_dict:
+                return comp_dict[k][1]
+        return default
+
+    # Use overrides if they exist, else compute from base components
+    if override:
+        basic = override['basic_override'] if override['basic_override'] is not None else base_basic
+        hra   = override['hra_override']   if override['hra_override']   is not None else get_comp(['house rent allowance', 'hra'], base_basic * 0.40)
+        sa    = override['sa_override']    if override['sa_override']    is not None else get_comp(['special allowance', 'sa'], base_basic * 0.20)
+        meal  = override['meal_override']  if override['meal_override']  is not None else get_comp(['meal allowance', 'meal_allowance'], 0.0)
+        med   = override['medical_override'] if override['medical_override'] is not None else get_comp(['medical allowance', 'medical_allowance'], 0.0)
+        conv  = override['conveyance_override'] if override['conveyance_override'] is not None else get_comp(['conveyance', 'transport allowance'], 0.0)
+        pf    = override['pf_override']    if override['pf_override']    is not None else get_comp(['provident fund', 'pf'], min(basic * 0.12, 1800.0))
+        esic  = override['esic_override']  if override['esic_override']  is not None else get_comp(['esi', 'insurance'], 0.0)
+        tds   = override['tds_override']   if override['tds_override']   is not None else get_comp(['income tax', 'tds'], 0.0)
+        advance = override['advance_override'] if override['advance_override'] is not None else get_comp(['advance', 'loan'], 0.0)
+        other_dedn = override['other_dedn_override'] if override['other_dedn_override'] is not None else get_comp(['other deduction'], 0.0)
+        super_ann = override['super_annuation_override'] if override['super_annuation_override'] is not None else get_comp(['super annuation'], 0.0)
+
+        w_days = override['working_days'] or 26
+        p_days = override['present_days'] or w_days
+        factor = (p_days / w_days) if w_days > 0 else 1.0
+
+        # Prorate all values
+        basic = round(basic * factor, 2)
+        hra   = round(hra * factor, 2)
+        sa    = round(sa * factor, 2)
+        meal  = round(meal * factor, 2)
+        med   = round(med * factor, 2)
+        conv  = round(conv * factor, 2)
+        pf    = round(pf * factor, 2)
+        esic  = round(esic * factor, 2)
+        tds   = round(tds * factor, 2)
+        advance = round(advance * factor, 2)
+        other_dedn = round(other_dedn * factor, 2)
+        super_ann = round(super_ann * factor, 2)
+    else:
+        _, days_in_month = cal_mod.monthrange(year_num, month_num)
+        w_off = sum(1 for d in range(1, days_in_month + 1) if datetime(year_num, month_num, d).weekday() >= 5)
+        w_days = days_in_month - w_off
+
+        if attendance:
+            p_days = attendance['present_days']
+        else:
+            p_days = w_days
+
+        basic = base_basic
+        hra   = get_comp(['house rent allowance', 'hra'], base_basic * 0.40)
+        sa    = get_comp(['special allowance', 'sa'], base_basic * 0.20)
+        meal  = get_comp(['meal allowance', 'meal_allowance'], 0.0)
+        med   = get_comp(['medical allowance', 'medical_allowance'], 0.0)
+        conv  = get_comp(['conveyance', 'transport allowance'], 0.0)
+        pf    = get_comp(['provident fund', 'pf'], min(base_basic * 0.12, 1800.0))
+        esic  = get_comp(['esi', 'insurance'], 0.0)
+        tds   = get_comp(['income tax', 'tds'], 0.0)
+        advance = get_comp(['advance', 'loan'], 0.0)
+        other_dedn = get_comp(['other deduction'], 0.0)
+        super_ann  = get_comp(['super annuation'], 0.0)
+
+    allowances_data = [
+        ('Basic', basic),
+        ('House Rent Allowance', hra),
+        ('Special Allowance', sa),
+    ]
+    if meal:  allowances_data.append(('Meal Allowance', meal))
+    if med:   allowances_data.append(('Medical Allowance', med))
+    if conv:  allowances_data.append(('Conveyance', conv))
+
+    taxes_data = []
+    # Always include PF, ESIC, TDS, and Advance, even if 0
+    taxes_data.append(('Provident Fund', pf))
+    taxes_data.append(('ESIC', esic))
+    taxes_data.append(('TDS / Income Tax', tds))
+    taxes_data.append(('Advance / Loan', advance))
+    if other_dedn: taxes_data.append(('Other Deduction', other_dedn))
+    if super_ann:  taxes_data.append(('Super Annuation', super_ann))
+
+    gross_salary = sum(a for _, a in allowances_data)
     total_deductions = sum(t for _, t in taxes_data)
     net_salary = gross_salary - total_deductions
     net_salary_words = amount_to_words_rupees(net_salary)
-
-    month_param = request.args.get('month', '').strip()
-    year_param = request.args.get('year', '').strip()
-    if month_param:
-        salary_month = month_param
-    else:
-        try:
-            salary_month = pd.to_datetime(employee['date']).strftime('%B')
-        except Exception:
-            salary_month = 'January'
-    if year_param:
-        salary_year = year_param
-    else:
-        try:
-            salary_year = str(pd.to_datetime(employee['date']).year)
-        except Exception:
-            salary_year = '2017'
-    payment_date = f"{salary_month} 28, {salary_year}"
 
     email_val = employee.get('email', '')
     if '@' in email_val:
@@ -1253,19 +1416,8 @@ def view_payslip(id):
     else:
         company_name = "HRSM ENTERPRISE SOLUTIONS"
 
-    # Human-readable label map
-    allowance_labels = {
-        'meal_allowance': 'Meal Allowance',
-        'transportation_allowance': 'Transportation Allowance',
-        'medical_allowance': 'Medical Allowance',
-        'wife_allowance': 'Wife Allowance',
-        'housing_allowance': 'Housing Allowance',
-    }
-    tax_labels = {
-        'retirement_insurance': 'Retirement Insurance',
-        'professional_tax': 'Professional Tax',
-        'income_tax': 'Income Tax',
-    }
+    allowance_labels = {}
+    tax_labels = {}
 
     return render_template(
         'payslip.html',
@@ -1273,7 +1425,7 @@ def view_payslip(id):
         bank=bank_row,
         company_name=company_name,
         basic=basic,
-        allowances_data=allowances_data,
+        allowances_data=[(lbl, amt) for lbl, amt in allowances_data if lbl != 'Basic'],
         taxes_data=taxes_data,
         allowance_labels=allowance_labels,
         tax_labels=tax_labels,
@@ -1282,7 +1434,12 @@ def view_payslip(id):
         net_salary=net_salary,
         net_salary_words=net_salary_words,
         salary_month=salary_month,
-        payment_date=payment_date
+        payment_date=payment_date,
+        w_days=w_days,
+        p_days=p_days,
+        cl_balance=leave_row.get('cl_balance', 0),
+        el_balance=leave_row.get('el_balance', 0),
+        sl_balance=leave_row.get('sl_balance', 0)
     )
 
 @app.route('/data-dictionary')
@@ -1330,13 +1487,13 @@ def data_dictionary_page():
             LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
             LEFT JOIN (
                 SELECT emp_id, SUM(amount) AS total_allowances 
-                FROM employee_financial_components 
+                FROM Employee_Allowance 
                 WHERE component_code = 1 
                 GROUP BY emp_id
             ) a ON e.emp_id = a.emp_id
             LEFT JOIN (
                 SELECT emp_id, SUM(amount) AS total_deductions 
-                FROM employee_financial_components 
+                FROM Employee_Allowance 
                 WHERE component_code = 2 
                 GROUP BY emp_id
             ) d ON e.emp_id = d.emp_id
@@ -1402,20 +1559,62 @@ def download_report(filename):
     return send_from_directory(base_dir, filename, as_attachment=True)
 
 
-from flask import jsonify
+from flask import jsonify, request
 from datetime import datetime
+
+@app.route('/api/templates/save', methods=['POST'])
+@hr_required
+def api_save_template():
+    data = request.json
+    t_name = data.get('template_name')
+    t_json = data.get('layout_json')
+    
+    if not t_name or not t_json:
+        return jsonify({'success': False, 'error': 'Missing data'}), 400
+        
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO Payslip_format (template_name, layout_json, Cname, CreatedBy)
+                VALUES (%s, %s, %s, %s)
+            ''', (t_name, t_json, current_user.username, current_user.username))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/templates/load', methods=['GET'])
+@hr_required
+def api_load_templates():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT template_id, template_name, layout_json FROM Payslip_format WHERE IActive=1')
+            templates = cursor.fetchall()
+            return jsonify({'success': True, 'templates': templates})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
 
 @app.route('/api/employee/<emp_id>')
 @hr_required
 def api_get_employee(emp_id):
+    month = request.args.get('month', type=int)
+    year = request.args.get('year', type=int)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Get employee basic + bank details
+            # Get employee basic + bank details + leave balances
             cursor.execute('''
-                SELECT e.*, b.bank_name, b.bank_account_num, b.ifsc_code 
+                SELECT e.*, b.bank_name, b.bank_account_num, b.ifsc_code,
+                       l.cl_balance, l.el_balance, l.sl_balance, l.coff_balance
                 FROM v_employees e
                 LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
+                LEFT JOIN employee_leave_balances l ON e.emp_id = l.emp_id
                 WHERE e.emp_id = %s
             ''', (emp_id,))
             emp = cursor.fetchone()
@@ -1428,9 +1627,29 @@ def api_get_employee(emp_id):
             if not emp.get('phone_number'):
                 random.seed(emp_id)
                 emp['phone_number'] = "+91-" + "".join([str(random.randint(0, 9)) for _ in range(10)])
-                
+            
+            # Fetch attendance
+            if month and year:
+                cursor.execute('''
+                    SELECT total_days, present_days FROM employee_monthly_attendance 
+                    WHERE emp_id = %s AND month_num = %s AND year_num = %s LIMIT 1
+                ''', (emp_id, month, year))
+            else:
+                cursor.execute('''
+                    SELECT total_days, present_days FROM employee_monthly_attendance 
+                    WHERE emp_id = %s ORDER BY year_num DESC, month_num DESC LIMIT 1
+                ''', (emp_id,))
+            attendance = cursor.fetchone()
+            if attendance:
+                emp['month_days'] = attendance['total_days']
+                emp['paid_days'] = float(attendance['present_days'])
+            else:
+                emp['month_days'] = 31 if not month else calendar.monthrange(year, month)[1]
+                emp['paid_days'] = 0.0
+
+
             # Get company info
-            cursor.execute('SELECT name, address FROM company_master LIMIT 1')
+            cursor.execute('SELECT name, address FROM Company LIMIT 1')
             company_info = cursor.fetchone()
             if company_info:
                 emp['company_name'] = company_info.get('name', 'Maxworth')
@@ -1456,7 +1675,7 @@ def api_get_employee(emp_id):
                 emp['basic_salary'] = float(emp['basic_salary'])
                 
             # Get financial components
-            cursor.execute('SELECT * FROM employee_financial_components WHERE emp_id = %s', (emp_id,))
+            cursor.execute('SELECT * FROM Employee_Allowance WHERE emp_id = %s', (emp_id,))
             components = cursor.fetchall()
             for c in components:
                 if 'amount' in c and c['amount'] is not None:
@@ -1496,20 +1715,20 @@ def payslip_builder_legacy():
             try:
                 with conn.cursor() as cursor:
                     # Auto-generate payslip number
-                    cursor.execute("SELECT COUNT(*) as count FROM payslip_master")
+                    cursor.execute("SELECT COUNT(*) as count FROM Salary_Payslip")
                     count = cursor.fetchone()['count'] + 1
                     payslip_no = f"PSL-{salary_year}-{str(count).zfill(5)}"
                     
                     # Insert into payslip_master
                     cursor.execute(
-                        """INSERT INTO payslip_master 
+                        """INSERT INTO Salary_Payslip 
                            (payslip_no, emp_id, salary_month, salary_year, basic_salary, total_allowance, total_deduction, final_in_hand_salary) 
                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                         (payslip_no, emp_id, salary_month, salary_year, basic_salary, total_allowance, total_deduction, final_in_hand_salary)
                     )
                     
                     # Delete existing components to replace them with the new generated ones
-                    cursor.execute("DELETE FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+                    cursor.execute("DELETE FROM Employee_Allowance WHERE emp_id = %s", (emp_id,))
                     
                     # Insert dynamic components into employee_financial_components
                     for i in range(len(comp_names)):
@@ -1518,7 +1737,7 @@ def payslip_builder_legacy():
                         amt = float(comp_amounts[i]) if i < len(comp_amounts) else 0.0
                         if name:
                             cursor.execute(
-                                """INSERT INTO employee_financial_components
+                                """INSERT INTO Employee_Allowance
                                 (emp_id, component_name, component_code, amount)
                                 VALUES (%s, %s, %s, %s)""",
                                 (emp_id, name, code, amt)
@@ -1593,12 +1812,12 @@ def upload_verify():
         cursor = conn.cursor()
         
         # Get max ID for auto-generation of EMP ID
-        cursor.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM employees")
+        cursor.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM Employee")
         max_db_id = cursor.fetchone()
         current_max_id = max_db_id['max_id'] if isinstance(max_db_id, dict) else max_db_id[0]
         
         # Fetch existing to check duplicates
-        cursor.execute("SELECT emp_id, email FROM employees")
+        cursor.execute("SELECT emp_id, email FROM Employee")
         existing_data = cursor.fetchall()
         existing_emp_ids = {str(e['emp_id']).strip().lower() for e in existing_data}
         existing_emails = {str(e['email']).strip().lower() for e in existing_data if e['email']}
@@ -1717,7 +1936,7 @@ def upload_commit(batch_id):
             # (Actual full logic here)
             import json
             
-            cursor.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM employees")
+            cursor.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM Employee")
             max_db_id = cursor.fetchone()
             current_max_id = max_db_id['max_id'] if isinstance(max_db_id, dict) else max_db_id[0]
             
@@ -1753,7 +1972,9 @@ def upload_commit(batch_id):
                 date_of_birth = f"{dob_year}-{dob_month:02d}-{dob_day:02d}"
                 
                 join_year = get_val(['joiningyear', 'joining year', 'joining_year'], random.randint(2015, current_year))
-                joining_date = f"{int(float(join_year))}-01-15"
+                join_month = random.randint(1, 12)
+                join_day = random.randint(1, 28)
+                joining_date = f"{int(float(join_year))}-{join_month:02d}-{join_day:02d}"
                 
                 basic_salary = float(get_val(['basic_salary', 'salary', 'basicsalary'], random.randint(40000, 150000)))
                 gender = get_val(['gender', 'sex'], random.choice(['Male', 'Female']))
@@ -1778,7 +1999,7 @@ def upload_commit(batch_id):
                 # Assuming simple insertion and we mapped them roughly or trigger handles it, or we insert into employees.
                 
                 # Check if exists
-                cursor.execute("SELECT id FROM employees WHERE emp_id = %s", (emp_id,))
+                cursor.execute("SELECT id FROM Employee WHERE emp_id = %s", (emp_id,))
                 exists = cursor.fetchone()
                 
                 if exists:
@@ -1786,7 +2007,7 @@ def upload_commit(batch_id):
                         continue
                     elif strategy == 'update':
                         cursor.execute("""
-                            UPDATE employees SET 
+                            UPDATE Employee SET 
                                 emp_name=%s, email=%s, date_of_birth=%s, joining_date=%s, 
                                 basic_salary=%s, age=%s, gender=%s, education=%s, 
                                 title=%s, department=%s, posting_location=%s, payment_tier=%s, phone_number=%s
@@ -1797,7 +2018,7 @@ def upload_commit(batch_id):
                     if strategy == 'update' or strategy == 'insert_new' or strategy == 'skip':
                         current_max_id += 1
                         cursor.execute("""
-                            INSERT INTO employees (
+                            INSERT INTO Employee (
                                 id, emp_id, emp_name, email, date_of_birth, joining_date, 
                                 basic_salary, age, gender, education, title, department, 
                                 posting_location, payment_tier, phone_number
@@ -1837,7 +2058,7 @@ def upload_commit(batch_id):
                         # Pick 6 to 9 random components for each employee
                         selected_components = random.sample(components, random.randint(6, 9))
                         
-                        cursor.execute("SELECT COALESCE(MAX(id), 0) FROM employee_financial_components")
+                        cursor.execute("SELECT COALESCE(MAX(id), 0) FROM Employee_Allowance")
                         fc_max = cursor.fetchone()
                         next_fc_id = (fc_max[list(fc_max.keys())[0]] if isinstance(fc_max, dict) else fc_max[0]) + 1
                         
@@ -1845,7 +2066,7 @@ def upload_commit(batch_id):
                             amt = round(base_amt * (basic_salary / 50000), 2)  # Scale roughly based on salary
                             if amt < 0: amt = 100.00
                             cursor.execute("""
-                                INSERT INTO employee_financial_components (
+                                INSERT INTO Employee_Allowance (
                                     id, emp_id, component_name, component_code, amount, is_active
                                 ) VALUES (%s, %s, %s, %s, %s, 1)
                             """, (next_fc_id, emp_id, comp_name, comp_code, amt))
@@ -1899,8 +2120,8 @@ def export_payslips():
     df = pd.read_sql('''
         SELECT p.payslip_no, p.emp_id, e.emp_name, p.salary_month, p.salary_year,
                p.basic_salary, p.total_allowance, p.total_deduction, p.final_in_hand_salary, p.generated_on
-        FROM payslip_master p
-        JOIN employees e ON p.emp_id = e.emp_id
+        FROM Salary_Payslip p
+        JOIN Employee e ON p.emp_id = e.emp_id
         ORDER BY p.generated_on DESC
     ''', conn)
     conn.close()
@@ -1925,10 +2146,21 @@ def data_dictionary():
 @app.route('/financial_master')
 @hr_required
 def financial_master():
+    from datetime import datetime
+    import random, calendar
+    
     search_col = request.args.get('search_col', 'emp_name').strip()
     search_val = request.args.get('search_val', '').strip()
     tier = request.args.get('tier', 'all').strip()
     sort_order = request.args.get('sort', 'id_asc').strip()
+    
+    now = datetime.now()
+    try:
+        month = int(request.args.get('month', now.month))
+        year = int(request.args.get('year', now.year))
+    except ValueError:
+        month = now.month
+        year = now.year
 
     allowed_cols = {
         'emp_name': 'Employee Name',
@@ -1942,13 +2174,18 @@ def financial_master():
         search_col = 'emp_name'
         
     query = """
-        SELECT e.emp_id, e.emp_name, e.basic_salary, e.joining_date, e.payment_tier,
-               b.bank_name, b.bank_account_num, b.ifsc_code
+        SELECT e.emp_id, e.emp_name, e.basic_salary, e.joining_date, e.payment_tier, e.uan_number,
+               b.bank_name, b.bank_account_num, b.ifsc_code,
+               e.department, e.title,
+               l.cl_balance, l.el_balance, l.sl_balance, l.coff_balance,
+               a.total_days as db_total_days, a.present_days as db_present_days
         FROM v_employees e
         LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
+        LEFT JOIN employee_leave_balances l ON e.emp_id = l.emp_id
+        LEFT JOIN employee_monthly_attendance a ON e.emp_id = a.emp_id AND a.month_num = %s AND a.year_num = %s
         WHERE 1=1
     """
-    params = []
+    params = [month, year]
     
     if search_val:
         if search_col in ['emp_name', 'emp_id']:
@@ -1958,7 +2195,7 @@ def financial_master():
         params.append(f"%{search_val}%")
         
     if tier != 'all':
-        query += " AND e.payment_tier = %s"
+        query += f" AND e.payment_tier = %s"
         params.append(int(tier))
         
     if sort_order == 'date_asc':
@@ -1973,25 +2210,175 @@ def financial_master():
     cursor.execute(query, params)
     employees_data = cursor.fetchall()
     
-    cursor.execute('SELECT * FROM employee_financial_components')
+    # Calculate days in month
+    _, days_in_month = calendar.monthrange(year, month)
+    
+    # Simple word converter
+    def num2words(num):
+        units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+        tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+        if num < 20: return units[num]
+        if num < 100: return tens[num // 10] + (" " + units[num % 10] if num % 10 != 0 else "")
+        if num < 1000: return units[num // 100] + " Hundred" + (" and " + num2words(num % 100) if num % 100 != 0 else "")
+        if num < 100000: return num2words(num // 1000) + " Thousand" + (" " + num2words(num % 1000) if num % 1000 != 0 else "")
+        if num < 10000000: return num2words(num // 100000) + " Lakh" + (" " + num2words(num % 100000) if num % 100000 != 0 else "")
+        return str(num)
+    
+    # Preload financial components for all fetched employees to avoid N+1 query problem
+    emp_ids = [e['emp_id'] for e in employees_data]
+    components_by_emp = {}
+    if emp_ids:
+        # Batch size for IN clause
+        batch_size = 1000
+        for i in range(0, len(emp_ids), batch_size):
+            batch = emp_ids[i:i+batch_size]
+            format_strings = ','.join(['%s'] * len(batch))
+            cursor.execute(f"SELECT emp_id, component_name, amount FROM Employee_Allowance WHERE emp_id IN ({format_strings})", tuple(batch))
+            for comp in cursor.fetchall():
+                eid = comp['emp_id']
+                if eid not in components_by_emp:
+                    components_by_emp[eid] = {}
+                components_by_emp[eid][comp['component_name'].lower()] = float(comp['amount'] or 0)
+                
+    enhanced_employees = []
+    for emp in employees_data:
+        emp_dict = dict(emp)
+        emp_id_str = emp['emp_id']
+        
+        # Calculate joined condition
+        join_date = emp['joining_date']
+        if join_date and (join_date.year > year or (join_date.year == year and join_date.month > month)):
+            total_days = 0
+            payable_days = 0
+        else:
+            total_days = int(emp['db_total_days']) if emp['db_total_days'] is not None else days_in_month
+            payable_days = float(emp['db_present_days']) if emp['db_present_days'] is not None else 0.0
+            
+        # Use exact DB Leave Balances
+        emp_dict['sl_bal'] = float(emp['sl_balance'] or 0)
+        emp_dict['cl_bal'] = float(emp['cl_balance'] or 0)
+        emp_dict['el_bal'] = float(emp['el_balance'] or 0)
+        emp_dict['coff_bal'] = float(emp['coff_balance'] or 0)
+        
+        # Base Components
+        base_basic = float(emp['basic_salary']) if emp['basic_salary'] else 0.0
+        
+        # If base_basic is 0, let's mock it for demo based on tier
+        if base_basic == 0.0:
+            if emp['payment_tier'] == 1: base_basic = 50000.0
+            elif emp['payment_tier'] == 2: base_basic = 30000.0
+            else: base_basic = 15000.0
+            
+        comp_dict = components_by_emp.get(emp_id_str, {})
+        base_hra = comp_dict.get('house rent allowance', comp_dict.get('hra', base_basic * 0.40))
+        base_sa = comp_dict.get('special allowance', comp_dict.get('sa', base_basic * 0.20))
+        base_gross = base_basic + base_hra + base_sa
+        
+        emp_dict['month_gross'] = base_gross
+        emp_dict['month_basic'] = base_basic
+        emp_dict['month_hra'] = base_hra
+        emp_dict['month_sa'] = base_sa
+        emp_dict['total_dys'] = payable_days
+        
+        # Prorated Components
+        factor = (payable_days / total_days) if total_days > 0 else 0
+        
+        final_basic = base_basic * factor
+        final_hra = base_hra * factor
+        final_sa = base_sa * factor
+        final_gross = final_basic + final_hra + final_sa
+        
+        emp_dict['final_basic'] = final_basic
+        emp_dict['final_hra'] = final_hra
+        emp_dict['final_sa'] = final_sa
+        emp_dict['final_gross'] = final_gross
+        
+        # Other Earnings
+        emp_dict['arrier'] = comp_dict.get('arrear', comp_dict.get('arrears', 0.0)) * factor
+        emp_dict['bonus'] = comp_dict.get('bonus', 0.0) * factor
+        emp_dict['telephone'] = comp_dict.get('telephone', 0.0) * factor
+        emp_dict['special_incentive'] = comp_dict.get('special incentive', 0.0) * factor
+        emp_dict['meal_allowance'] = comp_dict.get('meal allowance', 0.0) * factor
+        emp_dict['medical_allowance'] = comp_dict.get('medical allowance', 0.0) * factor
+        emp_dict['conveyance'] = comp_dict.get('conveyance', comp_dict.get('transport allowance', 0.0)) * factor
+        
+        total_earning = final_gross + emp_dict['arrier'] + emp_dict['bonus'] + emp_dict['telephone'] + emp_dict['special_incentive'] + emp_dict['meal_allowance'] + emp_dict['medical_allowance'] + emp_dict['conveyance']
+        emp_dict['total_earning'] = total_earning
+        
+        # Deductions
+        base_pf = comp_dict.get('provident fund', comp_dict.get('pf', min(base_basic * 0.12, 1800.0) if base_basic > 0 else 0.0))
+        pf = base_pf * factor
+        
+        base_esic = comp_dict.get('esi', comp_dict.get('insurance', base_gross * 0.0075 if base_gross <= 21000 and base_gross > 0 else 0.0))
+        esic = base_esic * factor
+        
+        base_advance = comp_dict.get('advance', comp_dict.get('loan', 0.0))
+        advance = base_advance * factor
+        
+        base_tds = comp_dict.get('income tax', comp_dict.get('tds', (base_gross * 0.05) if base_gross > 40000 else 0.0))
+        tds = base_tds * factor
+        
+        base_other = comp_dict.get('other deduction', 0.0)
+        other_dedn = base_other * factor
+        
+        base_super = comp_dict.get('super annuation', 0.0)
+        super_annuation = base_super * factor
+        
+        total_dedn = pf + esic + advance + tds + other_dedn + super_annuation
+        emp_dict['pf'] = pf
+        emp_dict['esic'] = esic
+        emp_dict['advance'] = advance
+        emp_dict['tds'] = tds
+        emp_dict['other_dedn'] = other_dedn
+        emp_dict['super_annuation'] = super_annuation
+        emp_dict['total_dedn'] = total_dedn
+        
+        # Net Salary
+        net_salary = total_earning - total_dedn
+        emp_dict['net_salary'] = net_salary
+        
+        # Employer Contributions (for CTC)
+        pf_employer = pf
+        esic_employer = total_earning * 0.0325 if total_earning <= 21000 and total_earning > 0 else 0.0
+        basic_da_pf = final_basic # Using final basic
+        ctc = total_earning + pf_employer + esic_employer
+        
+        emp_dict['pf_employer'] = pf_employer
+        emp_dict['esic_employer'] = esic_employer
+        emp_dict['basic_da_pf'] = basic_da_pf
+        emp_dict['ctc'] = ctc
+        
+        # In words
+        if net_salary > 0:
+            emp_dict['net_salary_word'] = f"Rupees {num2words(int(net_salary))} Only"
+        else:
+            emp_dict['net_salary_word'] = "Zero"
+            
+        enhanced_employees.append(emp_dict)
+        
+    cursor.execute('SELECT * FROM Employee_Allowance')
     all_components = cursor.fetchall()
-    conn.close()
     
     emp_components = {}
     for comp in all_components:
         eid = comp['emp_id']
         if eid not in emp_components:
             emp_components[eid] = []
-        emp_components[eid].append(comp)
+        emp_components[eid].append(dict(comp))
         
+    conn.close()
+    
     return render_template('financial_master.html', 
-                           employees=employees_data, 
+                           employees=enhanced_employees,
                            emp_components=emp_components,
                            search_col=search_col,
                            search_val=search_val,
                            tier=tier,
                            sort=sort_order,
-                           allowed_cols=allowed_cols)
+                           allowed_cols=allowed_cols,
+                           month=month,
+                           year=year,
+                           now=now)
 
 @app.route('/update_employee_financials', methods=['POST'])
 @hr_required
@@ -2006,7 +2393,7 @@ def update_employee_financials():
     cursor = conn.cursor()
     
     try:
-        cursor.execute("UPDATE employees SET basic_salary=%s WHERE emp_id=%s", (basic_salary, emp_id))
+        cursor.execute("UPDATE Employee SET basic_salary=%s WHERE emp_id=%s", (basic_salary, emp_id))
         
         cursor.execute("SELECT id FROM employee_bank_details WHERE emp_id=%s", (emp_id,))
         if cursor.fetchone():
@@ -2021,7 +2408,7 @@ def update_employee_financials():
                 VALUES (%s, %s, %s, %s)
             """, (emp_id, bank_name, bank_account_num, ifsc_code))
             
-        cursor.execute("DELETE FROM employee_financial_components WHERE emp_id=%s", (emp_id,))
+        cursor.execute("DELETE FROM Employee_Allowance WHERE emp_id=%s", (emp_id,))
         
         comp_names = request.form.getlist('component_name[]')
         comp_codes = request.form.getlist('component_code[]')
@@ -2030,7 +2417,7 @@ def update_employee_financials():
         for name, code, amt in zip(comp_names, comp_codes, comp_amounts):
             if name.strip() and amt.strip():
                 cursor.execute("""
-                    INSERT INTO employee_financial_components (emp_id, component_name, component_code, amount)
+                    INSERT INTO Employee_Allowance (emp_id, component_name, component_code, amount)
                     VALUES (%s, %s, %s, %s)
                 """, (emp_id, name.strip(), int(code), float(amt)))
                 
@@ -2068,11 +2455,9 @@ def login():
                     ip_address = request.remote_addr
                     browser = request.user_agent.browser
                     device = request.user_agent.platform
-                    cursor.execute("SELECT COALESCE(MAX(log_id), 0) + 1 AS next_id FROM user_login_logs")
-                    new_log_id = cursor.fetchone()['next_id']
                     cursor.execute(
-                        "INSERT INTO user_login_logs (log_id, user_id, ip_address, browser, device) VALUES (%s, %s, %s, %s, %s)",
-                        (new_log_id, user['user_id'], ip_address, browser, device)
+                        "INSERT INTO user_login_logs (user_id, ip_address, browser, device) VALUES (%s, %s, %s, %s)",
+                        (user['user_id'], ip_address, browser, device)
                     )
                     cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s", (user['user_id'],))
                     conn.commit()
@@ -2140,7 +2525,7 @@ def users():
                     conn.commit()
                     flash("User status updated.", "success")
             
-            cursor.execute("SELECT u.*, e.emp_name FROM users u LEFT JOIN employees e ON u.employee_id = e.emp_id")
+            cursor.execute("SELECT u.*, e.emp_name FROM users u LEFT JOIN Employee e ON u.employee_id = e.emp_id")
             users_list = cursor.fetchall()
             
             import re
@@ -2186,7 +2571,7 @@ def employee_dashboard():
             cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
             bank_details = cursor.fetchone()
             
-            cursor.execute("SELECT * FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+            cursor.execute("SELECT * FROM Employee_Allowance WHERE emp_id = %s", (emp_id,))
             financials = cursor.fetchall()
             allowances = [f for f in financials if f['component_code'] == 1]
             deductions = [f for f in financials if f['component_code'] == 2]
@@ -2194,7 +2579,7 @@ def employee_dashboard():
             cursor.execute("SELECT * FROM employee_emails WHERE emp_id = %s ORDER BY sent_at DESC", (emp_id,))
             emails = cursor.fetchall()
             
-            cursor.execute("SELECT * FROM payslip_master WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
+            cursor.execute("SELECT * FROM Salary_Payslip WHERE emp_id = %s ORDER BY generated_on DESC", (emp_id,))
             payslips = cursor.fetchall()
             
             # Additional logic can be added if needed, matching employee_profile route
@@ -2322,7 +2707,7 @@ def employee_dashboard():
 def payslip_builder():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT emp_id, emp_name FROM employees")
+    cursor.execute("SELECT emp_id, emp_name FROM Employee")
     employees = cursor.fetchall()
     conn.close()
     return render_template('payslip_designer.html', employees=employees)
@@ -2357,7 +2742,7 @@ def api_templates():
     cursor = conn.cursor()
     
     if request.method == 'GET':
-        cursor.execute("SELECT * FROM payslip_templates ORDER BY updated_at DESC")
+        cursor.execute("SELECT * FROM Payslip_format ORDER BY updated_at DESC")
         templates = cursor.fetchall()
         for t in templates:
             t['created_at'] = t['created_at'].isoformat() if t['created_at'] else None
@@ -2372,13 +2757,13 @@ def api_templates():
         status = data.get('status', 'Draft')
         
         cursor.execute(
-            "INSERT INTO payslip_templates (template_name, layout_json, status) VALUES (%s, %s, %s)",
+            "INSERT INTO Payslip_format (template_name, layout_json, status) VALUES (%s, %s, %s)",
             (template_name, layout_json, status)
         )
         template_id = cursor.lastrowid
         
         cursor.execute(
-            "INSERT INTO payslip_template_versions (template_id, version_number, published_by, layout_json) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO Payslip_format_setting (template_id, version_number, published_by, layout_json) VALUES (%s, %s, %s, %s)",
             (template_id, 1, session.get('user_id'), layout_json)
         )
         cursor.execute(
@@ -2405,7 +2790,7 @@ def api_preview_data():
     cursor.execute("SELECT * FROM employee_bank_details WHERE emp_id = %s", (emp_id,))
     bank = cursor.fetchone() or {}
     
-    cursor.execute("SELECT * FROM employee_financial_components WHERE emp_id = %s", (emp_id,))
+    cursor.execute("SELECT * FROM Employee_Allowance WHERE emp_id = %s", (emp_id,))
     financials = cursor.fetchall()
     
     allowances = [f for f in financials if f['component_code'] == 1]
@@ -2502,6 +2887,658 @@ def api_template_validate():
         'errors': errors, 
         'warnings': warnings
     })
+
+@app.route('/attendance_master')
+@hr_required
+def attendance_master():
+    from datetime import datetime
+    import random, calendar
+    
+    search_col = request.args.get('search_col', 'emp_name').strip()
+    search_val = request.args.get('search_val', '').strip()
+    year = request.args.get('year', str(datetime.now().year))
+    month = request.args.get('month', str(datetime.now().month))
+    
+    allowed_cols = {
+        'emp_name': 'Employee Name',
+        'emp_id': 'Employee ID'
+    }
+    
+    if search_col not in allowed_cols:
+        search_col = 'emp_name'
+        
+    query = """
+        SELECT e.emp_id, e.emp_name, e.department, e.title, e.employment_type, e.joining_date,
+               SUM(CASE WHEN a.status IN ('Present', '1') THEN 1 ELSE 0 END) as present_days,
+               SUM(CASE WHEN a.status IN ('Absent', '2') THEN 1 ELSE 0 END) as absent_days,
+               SUM(CASE WHEN a.status IN ('Leave', '3') THEN 1 ELSE 0 END) as leave_days,
+               SUM(CASE WHEN a.status IN ('Half Day', '4') THEN 1 ELSE 0 END) as half_days
+        FROM v_employees e
+        LEFT JOIN employee_attendance a ON e.emp_id = a.emp_id 
+             AND YEAR(a.attendance_date) = %s AND MONTH(a.attendance_date) = %s
+        WHERE 1=1
+    """
+    params = [year, month]
+    
+    if search_val:
+        query += f" AND e.{search_col} LIKE %s"
+        params.append(f"%{search_val}%")
+        
+    query += " GROUP BY e.emp_id, e.emp_name, e.department, e.title, e.employment_type, e.joining_date ORDER BY e.emp_id ASC"
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(query, params)
+    employees_data = cursor.fetchall()
+    conn.close()
+    
+    enhanced_employees = []
+    
+    y, m = int(year), int(month)
+    _, days_in_month = calendar.monthrange(y, m)
+    
+    # Calculate weekends in the month
+    w_off = sum(1 for d in range(1, days_in_month + 1) if datetime(y, m, d).weekday() >= 5)
+    working_days = days_in_month - w_off
+    
+    # Mocking standard holidays (1 per month max for simple mock)
+    base_holiday = 1 if m in [1, 8, 10, 11, 12] else 0
+    
+    for emp in employees_data:
+        emp_dict = dict(emp)
+        emp_id_str = emp['emp_id']
+        joining_date = emp['joining_date']
+        
+        if isinstance(joining_date, str):
+            joining_date = datetime.strptime(joining_date, '%Y-%m-%d').date()
+            
+        emp_dict['joining_date_obj'] = joining_date
+        
+        # Check if joined after this month
+        if joining_date and (joining_date.year > y or (joining_date.year == y and joining_date.month > m)):
+            # Employee not yet joined
+            emp_dict.update({
+                'working_days': working_days,
+                'present_days': 0,
+                'w_off': w_off,
+                'holiday': base_holiday,
+                'sl_taken': 0, 'coff_taken': 0, 'cl_taken': 0, 'el_taken': 0, 'lwp': 0,
+                'final_processed': 0,
+                'late_cl': 'NA', 'late_el': 'NA', 'final_coff_month': 'NA',
+                'last_sl': 'NA', 'sl_wo_dedn': 'NA',
+                'last_cl': 'NA', 'cl_wo_dedn': 'NA',
+                'last_el': 'NA', 'el_wo_dedn': 'NA',
+                'coff_bal': '#VALUE!', 'sl_bal': '#VALUE!', 'cl_bal': '#VALUE!', 'el_bal': '#VALUE!'
+            })
+            enhanced_employees.append(emp_dict)
+            continue
+            
+        random.seed(f"{emp_id_str}_{m}_{y}")
+        
+        holiday = base_holiday
+        
+        total_tracked = int(emp['present_days'] or 0) + int(emp['absent_days'] or 0) + int(emp['leave_days'] or 0) + int(emp['half_days'] or 0)
+        
+        # If no real data, mock total leaves/absents
+        if total_tracked == 0:
+            # Random mock between 0 and 5 total absence days
+            total_unattended = random.randint(0, 5)
+            present_days = working_days - total_unattended
+        else:
+            total_unattended = int(emp['absent_days'] or 0) + int(emp['leave_days'] or 0)
+            present_days = int(emp['present_days'] or 0)
+            
+        # Split unattended into categories
+        sl_taken = 0
+        cl_taken = 0
+        el_taken = 0
+        coff_taken = 0
+        lwp = 0
+        
+        # Distribute unattended
+        rem = total_unattended
+        if rem > 0:
+            sl_taken = random.randint(0, min(2, rem))
+            rem -= sl_taken
+        if rem > 0:
+            cl_taken = random.randint(0, min(2, rem))
+            rem -= cl_taken
+        if rem > 0:
+            el_taken = random.randint(0, min(1, rem))
+            rem -= el_taken
+        if rem > 0:
+            coff_taken = random.randint(0, min(1, rem))
+            rem -= coff_taken
+        lwp = rem
+        
+        late_cl = 0
+        late_el = 0
+        
+        # Mock last month balances
+        last_sl = random.randint(1, 10)
+        last_cl = random.randint(1, 10)
+        last_el = random.randint(5, 30)
+        last_coff = round(random.uniform(0, 3), 2)
+        
+        sl_wo_dedn = max(0, last_sl - sl_taken)
+        cl_wo_dedn = max(0, last_cl - cl_taken)
+        el_wo_dedn = max(0, last_el - el_taken)
+        
+        final_sl = sl_wo_dedn
+        final_cl = max(0, cl_wo_dedn - late_cl)
+        final_el = max(0, el_wo_dedn - late_el)
+        final_coff = max(0, last_coff - coff_taken)
+        
+        final_processed = working_days + w_off + holiday - lwp
+        
+        emp_dict.update({
+            'working_days': working_days,
+            'present_days': present_days,
+            'w_off': w_off,
+            'holiday': holiday,
+            'sl_taken': sl_taken, 'coff_taken': coff_taken, 'cl_taken': cl_taken, 'el_taken': el_taken, 'lwp': lwp,
+            'final_processed': final_processed,
+            'late_cl': late_cl, 'late_el': late_el, 'final_coff_month': final_coff,
+            'last_sl': last_sl, 'sl_wo_dedn': sl_wo_dedn,
+            'last_cl': last_cl, 'cl_wo_dedn': cl_wo_dedn,
+            'last_el': last_el, 'el_wo_dedn': el_wo_dedn,
+            'coff_bal': final_coff, 'sl_bal': final_sl, 'cl_bal': final_cl, 'el_bal': final_el
+        })
+        enhanced_employees.append(emp_dict)
+        
+    return render_template('attendance_master.html', 
+                           employees=enhanced_employees, 
+                           search_col=search_col,
+                           search_val=search_val,
+                           year=year,
+                           month=month,
+                           allowed_cols=allowed_cols)
+
+@app.route('/api/attendance/<emp_id>/<year>/<month>')
+@hr_required
+def api_get_attendance(emp_id, year, month):
+    from datetime import datetime
+    import random, calendar
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT attendance_date, status, in_time, out_time, remarks
+        FROM employee_attendance
+        WHERE emp_id = %s AND YEAR(attendance_date) = %s AND MONTH(attendance_date) = %s
+        ORDER BY attendance_date ASC
+    """, (emp_id, year, month))
+    records = list(cursor.fetchall())
+    
+    cursor.execute("SELECT emp_name, joining_date FROM Employee WHERE emp_id = %s", (emp_id,))
+    emp = cursor.fetchone()
+    conn.close()
+    
+    if not records and emp:
+        joining_date = emp['joining_date']
+        if isinstance(joining_date, str):
+            joining_date = datetime.strptime(joining_date, '%Y-%m-%d').date()
+            
+        y, m = int(year), int(month)
+        last_day_of_month = datetime(y, m, calendar.monthrange(y, m)[1]).date()
+        
+        if joining_date <= last_day_of_month:
+            random.seed(emp_id + str(year) + str(month))
+            num_days = calendar.monthrange(y, m)[1]
+            
+            today = datetime.now().date()
+            if datetime(y, m, 1).date() <= today:
+                end_day = num_days if datetime(y, m, num_days).date() <= today else today.day
+                for day in range(1, end_day + 1):
+                    date_obj = datetime(y, m, day)
+                    if date_obj.date() < joining_date: continue
+                    
+                    if date_obj.weekday() >= 5:
+                        status = 'Leave'
+                        in_time = None
+                        out_time = None
+                        remarks = 'Weekend'
+                    else:
+                        rand_val = random.random()
+                        if rand_val < 0.85:
+                            status = 'Present'
+                            in_time = f"09:{random.randint(0,30):02d}:00"
+                            out_time = f"17:{random.randint(30,59):02d}:00"
+                        elif rand_val < 0.90:
+                            status = 'Absent'
+                            in_time = None
+                            out_time = None
+                        elif rand_val < 0.95:
+                            status = 'Leave'
+                            in_time = None
+                            out_time = None
+                        else:
+                            status = 'Half Day'
+                            in_time = "09:00:00"
+                            out_time = "13:00:00"
+                        remarks = None
+                    
+                records.append({
+                    'attendance_date': date_obj.date(),
+                    'status': status,
+                    'in_time': in_time,
+                    'out_time': out_time,
+                    'remarks': remarks
+                })
+                
+    for r in records:
+        if r['attendance_date']: r['attendance_date'] = r['attendance_date'].strftime('%Y-%m-%d')
+        if r['in_time']: r['in_time'] = str(r['in_time'])
+        if r['out_time']: r['out_time'] = str(r['out_time'])
+        
+    return jsonify({"records": records, "emp_name": emp['emp_name'] if emp else emp_id})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SALARY MASTER ROUTES
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/salary_master')
+@hr_required
+def salary_master():
+    """Salary Master — shows all employee salary details prorated by working/present days.
+    Supports per-month overrides stored in salary_overrides table.
+    """
+    from datetime import datetime as _dt
+    import calendar as cal_mod
+
+    now = _dt.now()
+    try:
+        month = int(request.args.get('month', now.month))
+        year  = int(request.args.get('year',  now.year))
+    except (ValueError, TypeError):
+        month, year = now.month, now.year
+
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+    per_page = 5
+
+    search_val = request.args.get('search_val', '').strip()
+    search_col = request.args.get('search_col', 'emp_name').strip()
+    allowed_cols = {'emp_name': 'Employee Name', 'emp_id': 'Employee ID'}
+    if search_col not in allowed_cols:
+        search_col = 'emp_name'
+
+    _, days_in_month = cal_mod.monthrange(year, month)
+    # Default working days = calendar days in the month (e.g. 30, 31, 28)
+    default_working_days = days_in_month
+    is_future = (year > now.year) or (year == now.year and month > now.month)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Fetch oldest joining year for dialog year range
+    cursor.execute("SELECT MIN(YEAR(joining_date)) as min_year FROM v_employees")
+    row = cursor.fetchone()
+    min_year = int(row['min_year']) if row and row['min_year'] else 2018
+
+    query = """
+        SELECT e.id, e.emp_id, e.emp_name, e.joining_date, e.basic_salary, e.payment_tier,
+               e.department, e.title,
+               b.bank_name, b.bank_account_num, b.ifsc_code,
+               ma.total_days as db_total_days, ma.present_days as db_present_days
+        FROM v_employees e
+        LEFT JOIN employee_bank_details b ON e.emp_id = b.emp_id
+        LEFT JOIN employee_monthly_attendance ma
+            ON e.emp_id = ma.emp_id AND ma.month_num = %s AND ma.year_num = %s
+        WHERE 1=1
+    """
+    params = [month, year]
+    
+    # Exclude employees who haven't joined yet
+    query += " AND (e.joining_date IS NULL OR YEAR(e.joining_date) < %s OR (YEAR(e.joining_date) = %s AND MONTH(e.joining_date) <= %s))"
+    params.extend([year, year, month])
+
+    if search_val:
+        if search_col == 'emp_id':
+            query += " AND e.emp_id LIKE %s"
+        else:
+            query += " AND e.emp_name LIKE %s"
+        params.append(f"%{search_val}%")
+    query += " ORDER BY e.emp_id ASC"
+
+    cursor.execute(query, params)
+    employees_data = cursor.fetchall()
+    
+    total_employees = len(employees_data)
+    total_pages = (total_employees + per_page - 1) // per_page
+    if page < 1: page = 1
+    if page > total_pages and total_pages > 0: page = total_pages
+    offset = (page - 1) * per_page
+    employees_data = employees_data[offset:offset + per_page]
+
+    # Fetch financial components for all employees (batch)
+    emp_ids = [e['emp_id'] for e in employees_data]
+    components_by_emp = {}
+    if emp_ids:
+        fmt = ','.join(['%s'] * len(emp_ids))
+        cursor.execute(
+            f"SELECT emp_id, component_name, component_code, amount FROM Employee_Allowance WHERE emp_id IN ({fmt})",
+            tuple(emp_ids)
+        )
+        for comp in cursor.fetchall():
+            eid = comp['emp_id']
+            if eid not in components_by_emp:
+                components_by_emp[eid] = {}
+            components_by_emp[eid][comp['component_name'].lower()] = float(comp['amount'] or 0)
+
+    # Fetch salary overrides for this month/year
+    overrides_by_emp = {}
+    if emp_ids:
+        fmt = ','.join(['%s'] * len(emp_ids))
+        cursor.execute(
+            f"SELECT * FROM Salary_Payslip WHERE month_num=%s AND year_num=%s AND emp_id IN ({fmt})",
+            tuple([month, year] + emp_ids)
+        )
+        for ov in cursor.fetchall():
+            overrides_by_emp[ov['emp_id']] = dict(ov)
+
+    conn.close()
+
+    month_name = _dt(year, month, 1).strftime('%B')
+    enhanced = []
+
+    for emp in employees_data:
+        ed = dict(emp)
+        emp_id_str = emp['emp_id']
+        joining_date = emp['joining_date']
+
+        if isinstance(joining_date, str):
+            try:
+                joining_date = _dt.strptime(joining_date, '%Y-%m-%d').date()
+            except Exception:
+                joining_date = None
+
+        ed['joining_date_obj'] = joining_date
+        ed['joining_date_fmt'] = joining_date.strftime('%d-%b-%y') if joining_date else 'N/A'
+
+        # Determine if employee was active in this month
+        not_working = joining_date and (
+            joining_date.year > year or
+            (joining_date.year == year and joining_date.month > month)
+        )
+        ed['not_working'] = not_working
+
+        if not_working:
+            ed.update({
+                'working_days': default_working_days,
+                'present_days': 0,
+                'basic': 0, 'hra': 0, 'sa': 0,
+                'meal': 0, 'medical': 0, 'conveyance': 0,
+                'pf': 0, 'esic': 0, 'tds': 0, 'advance': 0,
+                'other_dedn': 0, 'super_annuation': 0,
+                'total_earning': 0, 'total_dedn': 0, 'net_salary': 0,
+                'has_override': False
+            })
+            enhanced.append(ed)
+            continue
+
+        comp = components_by_emp.get(emp_id_str, {})
+        ov  = overrides_by_emp.get(emp_id_str)
+
+        base_basic = float(emp['basic_salary'] or 0)
+        if base_basic == 0:
+            tier = emp['payment_tier'] or 3
+            base_basic = 50000.0 if tier == 1 else (30000.0 if tier == 2 else 15000.0)
+
+        # Base component values
+        def gc(keys, default=0.0):
+            for k in keys:
+                if k in comp: return comp[k]
+            return default
+
+        base_hra  = gc(['house rent allowance', 'hra'], 0.0)
+        base_sa   = gc(['special allowance', 'sa'], 0.0)
+        base_meal = gc(['meal allowance', 'meal_allowance'], 0.0)
+        base_med  = gc(['medical allowance', 'medical_allowance'], 0.0)
+        base_conv = gc(['conveyance', 'transport allowance'], 0.0)
+        base_pf   = gc(['provident fund', 'pf'], 0.0)
+        base_esic = gc(['esi', 'insurance'], 0.0)
+        base_tds  = gc(['income tax', 'tds'], 0.0)
+        base_adv  = gc(['advance', 'loan'], 0.0)
+        base_other = gc(['other deduction'], 0.0)
+        base_super = gc(['super annuation'], 0.0)
+
+        # Working days: override > calculated weekday count for this month
+        # NOTE: attendance.total_days stores CALENDAR days (31), NOT working days — so we ignore it here
+        if ov and ov.get('working_days') is not None:
+            working_days = int(ov['working_days'])
+        else:
+            working_days = default_working_days  # weekdays in month, e.g. 21 for May 2026
+
+        # Present days: override > attendance record > assume full attendance
+        if ov and ov.get('present_days') is not None:
+            present_days = float(ov['present_days'])
+        elif emp['db_present_days'] is not None:
+            present_days = float(emp['db_present_days'])
+        else:
+            present_days = 0.0
+
+        factor = (present_days / working_days) if working_days > 0 else 1.0
+
+        def ov_val(key, base, prorate=True):
+            """Return override value if set, else prorate base."""
+            if ov and ov.get(key) is not None:
+                val = float(ov[key])
+                return round(val * factor, 2) if prorate else round(val, 2)
+            return round(base * factor, 2) if prorate else round(base, 2)
+
+        basic = ov_val('basic_override', base_basic, True)
+        hra   = ov_val('hra_override',   base_hra, True)
+        sa    = ov_val('sa_override',    base_sa, True)
+        meal  = ov_val('meal_override',  base_meal, True)
+        med   = ov_val('medical_override', base_med, True)
+        conv  = ov_val('conveyance_override', base_conv, True)
+        pf    = ov_val('pf_override',    base_pf, False)
+        esic  = ov_val('esic_override',  base_esic, False)
+        tds   = ov_val('tds_override',   base_tds, False)
+        advance = ov_val('advance_override', base_adv, False)
+        other_dedn = ov_val('other_dedn_override', base_other, False)
+        super_ann  = ov_val('super_annuation_override', base_super, False)
+
+        total_earning = basic + hra + sa + meal + med + conv
+        total_dedn    = pf + esic + tds + advance + other_dedn + super_ann
+        net_salary    = total_earning - total_dedn
+
+        ed.update({
+            'working_days': working_days,
+            'present_days': present_days,
+            'basic': basic, 'hra': hra, 'sa': sa,
+            'meal': meal, 'medical': med, 'conveyance': conv,
+            'pf': pf, 'esic': esic, 'tds': tds, 'advance': advance,
+            'other_dedn': other_dedn, 'super_annuation': super_ann,
+            'total_earning': total_earning,
+            'total_dedn': total_dedn,
+            'net_salary': net_salary,
+            # Base (unprorated) values for Edit modal defaults
+            'base_basic': base_basic, 'base_hra': base_hra, 'base_sa': base_sa,
+            'base_meal': base_meal, 'base_med': base_med, 'base_conv': base_conv,
+            'base_pf': base_pf, 'base_esic': base_esic, 'base_tds': base_tds,
+            'base_adv': base_adv, 'base_other': base_other, 'base_super': base_super,
+            'has_override': ov is not None
+        })
+        enhanced.append(ed)
+
+    return render_template(
+        'salary_master.html',
+        employees=enhanced,
+        month=month,
+        year=year,
+        month_name=month_name,
+        min_year=min_year,
+        now_year=_dt.now().year,
+        search_col=search_col,
+        search_val=search_val,
+        allowed_cols=allowed_cols,
+        default_working_days=default_working_days,
+        page=page,
+        total_pages=total_pages
+    )
+
+
+@app.route('/api/salary/update', methods=['POST'])
+@hr_required
+def api_salary_update():
+    """Bulk update working/present days for selected employees for a given month/year.
+    Returns recalculated salary figures for live JS update.
+    """
+    data = request.get_json(force=True)
+    emp_ids      = data.get('emp_ids', [])
+    month        = int(data.get('month', 1))
+    year         = int(data.get('year', 2026))
+    working_days = data.get('working_days')
+    present_days = data.get('present_days')
+
+    if not emp_ids:
+        return jsonify({'success': False, 'error': 'No employees selected'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    results = []
+    for emp_id in emp_ids:
+        try:
+            update_fields = []
+            update_vals   = []
+            if working_days is not None:
+                update_fields.append('working_days=%s')
+                update_vals.append(int(working_days))
+            if present_days is not None:
+                update_fields.append('present_days=%s')
+                update_vals.append(float(present_days))
+
+            if update_fields:
+                cursor.execute(
+                    f"""
+                    INSERT INTO Salary_Payslip (emp_id, month_num, year_num, {', '.join(f.split('=')[0] for f in update_fields)})
+                    VALUES (%s, %s, %s, {', '.join(['%s']*len(update_fields))})
+                    ON DUPLICATE KEY UPDATE {', '.join(update_fields)}
+                    """,
+                    tuple([emp_id, month, year] + update_vals + update_vals)
+                )
+
+            # Fetch updated override + base to return recalculated values
+            cursor.execute("SELECT basic_salary, payment_tier FROM v_employees WHERE emp_id=%s", (emp_id,))
+            emp_row = cursor.fetchone()
+            cursor.execute("SELECT * FROM Salary_Payslip WHERE emp_id=%s AND month_num=%s AND year_num=%s", (emp_id, month, year))
+            ov = cursor.fetchone()
+            cursor.execute("SELECT component_name, amount FROM Employee_Allowance WHERE emp_id=%s", (emp_id,))
+            comps_raw = cursor.fetchall()
+            comp = {r['component_name'].lower(): float(r['amount'] or 0) for r in comps_raw}
+
+            base_basic = float(emp_row['basic_salary'] or 0) if emp_row else 0
+            if base_basic == 0:
+                tier = (emp_row or {}).get('payment_tier', 3)
+                base_basic = 50000.0 if tier == 1 else (30000.0 if tier == 2 else 15000.0)
+
+            def gc2(keys, default=0.0):
+                for k in keys:
+                    if k in comp: return comp[k]
+                return default
+
+            wd = int(ov['working_days']) if ov and ov.get('working_days') is not None else (int(working_days) if working_days else 26)
+            pd_ = float(ov['present_days']) if ov and ov.get('present_days') is not None else (float(present_days) if present_days else float(wd))
+            factor = (pd_ / wd) if wd > 0 else 1.0
+
+            b = round(base_basic * factor, 2)
+            h = round(gc2(['house rent allowance','hra'], base_basic*0.40) * factor, 2)
+            s = round(gc2(['special allowance','sa'], base_basic*0.20) * factor, 2)
+            ml = round(gc2(['meal allowance','meal_allowance']) * factor, 2)
+            md = round(gc2(['medical allowance','medical_allowance']) * factor, 2)
+            cv = round(gc2(['conveyance','transport allowance']) * factor, 2)
+            pf = round(gc2(['provident fund','pf'], min(base_basic*0.12,1800.0)) * factor, 2)
+            esic = round(gc2(['esi','insurance']) * factor, 2)
+            tds  = round(gc2(['income tax','tds']) * factor, 2)
+            adv  = round(gc2(['advance','loan']) * factor, 2)
+
+            te = b + h + s + ml + md + cv
+            td = pf + esic + tds + adv
+            ns = te - td
+
+            results.append({
+                'emp_id': emp_id, 'working_days': wd, 'present_days': pd_,
+                'basic': b, 'hra': h, 'sa': s, 'meal': ml, 'medical': md, 'conveyance': cv,
+                'pf': pf, 'esic': esic, 'tds': tds, 'advance': adv,
+                'total_earning': te, 'total_dedn': td, 'net_salary': ns
+            })
+        except Exception as e:
+            results.append({'emp_id': emp_id, 'error': str(e)})
+
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'results': results})
+
+
+@app.route('/api/salary/edit_month', methods=['POST'])
+@hr_required
+def api_salary_edit_month():
+    """Save a full per-month salary override for one employee (from Edit Salary modal)."""
+    data = request.get_json(force=True)
+    emp_id = data.get('emp_id')
+    month  = int(data.get('month', 1))
+    year   = int(data.get('year', 2026))
+
+    if not emp_id:
+        return jsonify({'success': False, 'error': 'emp_id required'}), 400
+
+    fields = [
+        'working_days', 'present_days',
+        'basic_override', 'hra_override', 'sa_override',
+        'meal_override', 'medical_override', 'conveyance_override',
+        'pf_override', 'esic_override', 'tds_override',
+        'advance_override', 'other_dedn_override', 'super_annuation_override'
+    ]
+
+    insert_cols = ['emp_id', 'month_num', 'year_num']
+    insert_vals = [emp_id, month, year]
+    update_parts = []
+
+    for f in fields:
+        val = data.get(f)
+        if val is not None and val != '':
+            try:
+                val = float(val)
+            except (ValueError, TypeError):
+                continue
+            insert_cols.append(f)
+            insert_vals.append(val)
+            update_parts.append(f"{f}=%s")
+
+    if not update_parts:
+        return jsonify({'success': False, 'error': 'No data to save'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cols_str = ', '.join(insert_cols)
+        placeholders = ', '.join(['%s'] * len(insert_cols))
+        update_str = ', '.join(update_parts)
+        update_vals = [v for v in insert_vals[3:]]
+
+        cursor.execute(
+            f"""
+            INSERT INTO Salary_Payslip ({cols_str})
+            VALUES ({placeholders})
+            ON DUPLICATE KEY UPDATE {update_str}
+            """,
+            tuple(insert_vals + update_vals)
+        )
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     # Only run database initialization in the main worker process when Flask's reloader is enabled
