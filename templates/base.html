@@ -20,7 +20,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <!-- Custom Style Sheet -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=1.1">
 </head>
 <body>
 
@@ -47,6 +47,16 @@
                             <li class="nav-item">
                                 <a class="nav-link {% if request.path == '/financial_master' %}active{% endif %}" href="{{ url_for('financial_master') }}">
                                     <i class="bi bi-currency-rupee me-1"></i> Financials
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {% if request.path == '/attendance_master' %}active{% endif %}" href="{{ url_for('attendance_master') }}">
+                                    <i class="bi bi-calendar-check me-1"></i> Attendance
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {% if request.path == '/salary_master' %}active{% endif %}" href="{{ url_for('salary_master') }}">
+                                    <i class="bi bi-cash-stack me-1"></i> Salary
                                 </a>
                             </li>
                             <li class="nav-item">
