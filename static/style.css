@@ -160,3 +160,8 @@ h1, h2, h3, h4, h5, h6, .navbar-brand {
     background-color: #ffffff !important;
     border-top: 1px solid var(--border-color);
 }
+
+
+.table-dark th {
+    color: #ffffff !important;
+}
