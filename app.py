@@ -108,6 +108,28 @@ app = Flask(__name__)
 app.secret_key = "employee_management_system_secret_key"
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 
+@app.template_filter('inr_format')
+def inr_format(value):
+    try:
+        value = float(value)
+        is_negative = value < 0
+        value = abs(value)
+        s, *d = str(f"{value:.2f}").partition(".")
+        if len(s) > 3:
+            s_head = s[:-3]
+            s_tail = s[-3:]
+            r = ""
+            while len(s_head) > 2:
+                r = "," + s_head[-2:] + r
+                s_head = s_head[:-2]
+            r = s_head + r + "," + s_tail
+        else:
+            r = s
+        res = "".join([r] + d)
+        return "-" + res if is_negative else res
+    except (ValueError, TypeError):
+        return value
+
 DB_HOST = 'localhost'
 DB_USER = 'root'
 DB_PASSWORD = 'yabh'
@@ -2281,7 +2303,7 @@ def financial_master():
         emp_dict['total_dys'] = payable_days
         
         # Prorated Components
-        factor = (payable_days / total_days) if total_days > 0 else 0
+        factor = 1.0
         
         final_basic = base_basic * factor
         final_hra = base_hra * factor
@@ -3305,6 +3327,11 @@ def salary_master():
         base_other = gc(['other deduction'], 0.0)
         base_super = gc(['super annuation'], 0.0)
 
+        # Apply TDS rule: Only if Gross Salary > 1,200,000 per year
+        base_gross = base_basic + base_hra + base_sa + base_meal + base_med + base_conv
+        if (base_gross * 12) <= 1200000:
+            base_tds = 0.0
+
         # Working days: override > calculated weekday count for this month
         # NOTE: attendance.total_days stores CALENDAR days (31), NOT working days — so we ignore it here
         if ov and ov.get('working_days') is not None:
@@ -3335,9 +3362,9 @@ def salary_master():
         meal  = ov_val('meal_override',  base_meal, True)
         med   = ov_val('medical_override', base_med, True)
         conv  = ov_val('conveyance_override', base_conv, True)
-        pf    = ov_val('pf_override',    base_pf, False)
-        esic  = ov_val('esic_override',  base_esic, False)
-        tds   = ov_val('tds_override',   base_tds, False)
+        pf    = ov_val('pf_override',    base_pf, True)
+        esic  = ov_val('esic_override',  base_esic, True)
+        tds   = ov_val('tds_override',   base_tds, True)
         advance = ov_val('advance_override', base_adv, False)
         other_dedn = ov_val('other_dedn_override', base_other, False)
         super_ann  = ov_val('super_annuation_override', base_super, False)
@@ -3385,24 +3412,31 @@ def salary_master():
 @app.route('/api/salary/update', methods=['POST'])
 @hr_required
 def api_salary_update():
-    """Bulk update working/present days for selected employees for a given month/year.
+    """Bulk update working/present days and overrides for selected employees.
     Returns recalculated salary figures for live JS update.
     """
     data = request.get_json(force=True)
-    emp_ids      = data.get('emp_ids', [])
+    updates      = data.get('updates', [])
     month        = int(data.get('month', 1))
     year         = int(data.get('year', 2026))
-    working_days = data.get('working_days')
-    present_days = data.get('present_days')
 
-    if not emp_ids:
+    if not updates:
         return jsonify({'success': False, 'error': 'No employees selected'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     results = []
-    for emp_id in emp_ids:
+    for update in updates:
+        emp_id = update.get('emp_id')
+        if not emp_id: continue
+        
+        working_days = update.get('working_days')
+        present_days = update.get('present_days')
+        meal_ov = update.get('meal_override')
+        med_ov = update.get('medical_override')
+        conv_ov = update.get('conveyance_override')
+
         try:
             update_fields = []
             update_vals   = []
@@ -3412,6 +3446,15 @@ def api_salary_update():
             if present_days is not None:
                 update_fields.append('present_days=%s')
                 update_vals.append(float(present_days))
+            if meal_ov is not None:
+                update_fields.append('meal_override=%s')
+                update_vals.append(float(meal_ov))
+            if med_ov is not None:
+                update_fields.append('medical_override=%s')
+                update_vals.append(float(med_ov))
+            if conv_ov is not None:
+                update_fields.append('conveyance_override=%s')
+                update_vals.append(float(conv_ov))
 
             if update_fields:
                 cursor.execute(
@@ -3446,15 +3489,32 @@ def api_salary_update():
             pd_ = float(ov['present_days']) if ov and ov.get('present_days') is not None else (float(present_days) if present_days else float(wd))
             factor = (pd_ / wd) if wd > 0 else 1.0
 
+            def ov_val_local(key, base, prorate=True):
+                if ov and ov.get(key) is not None:
+                    return round(float(ov[key]) * factor, 2) if prorate else round(float(ov[key]), 2)
+                return round(base * factor, 2) if prorate else round(base, 2)
+
             b = round(base_basic * factor, 2)
-            h = round(gc2(['house rent allowance','hra'], base_basic*0.40) * factor, 2)
-            s = round(gc2(['special allowance','sa'], base_basic*0.20) * factor, 2)
-            ml = round(gc2(['meal allowance','meal_allowance']) * factor, 2)
-            md = round(gc2(['medical allowance','medical_allowance']) * factor, 2)
-            cv = round(gc2(['conveyance','transport allowance']) * factor, 2)
+            h_base = gc2(['house rent allowance','hra'], base_basic*0.40)
+            s_base = gc2(['special allowance','sa'], base_basic*0.20)
+            ml_base = gc2(['meal allowance','meal_allowance'], 2000)
+            md_base = gc2(['medical allowance','medical_allowance'], 1500)
+            cv_base = gc2(['conveyance','transport allowance'], 3000)
+            
+            h = round(h_base * factor, 2)
+            s = round(s_base * factor, 2)
+            ml = ov_val_local('meal_override', ml_base, False)
+            md = ov_val_local('medical_override', md_base, False)
+            cv = ov_val_local('conveyance_override', cv_base, False)
+            
+            base_gross = base_basic + h_base + s_base + ml_base + md_base + cv_base
+            base_tds_val = gc2(['income tax','tds'])
+            if (base_gross * 12) <= 1200000:
+                base_tds_val = 0.0
+
             pf = round(gc2(['provident fund','pf'], min(base_basic*0.12,1800.0)) * factor, 2)
             esic = round(gc2(['esi','insurance']) * factor, 2)
-            tds  = round(gc2(['income tax','tds']) * factor, 2)
+            tds  = round(base_tds_val * factor, 2)
             adv  = round(gc2(['advance','loan']) * factor, 2)
 
             te = b + h + s + ml + md + cv

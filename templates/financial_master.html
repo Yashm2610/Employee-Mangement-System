@@ -94,12 +94,10 @@
                         <th class="ps-3">Emp ID</th>
                         <th>Name</th>
                         <th>DOJ</th>
-                        <th>Working Days</th>
                         <th>MONTH GROSS</th>
                         <th>MONTH BASIC</th>
                         <th>HRA</th>
                         <th>SA</th>
-                        <th>Total Dys</th>
                         <th class="bg-primary text-white">Final Basic</th>
                         <th class="bg-primary text-white">final HRA</th>
                         <th class="bg-primary text-white">Final SA</th>
@@ -134,37 +132,35 @@
                         <td class="ps-3 fw-medium"><code>{{ emp.emp_id }}</code></td>
                         <td class="fw-bold">{{ emp.emp_name }}</td>
                         <td>{{ emp.joining_date.strftime('%d-%b-%y') if emp.joining_date else 'NA' }}</td>
-                        <td>21</td>
-                        <td>{{ "{:,.2f}".format(emp.month_gross) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.month_basic) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.month_hra) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.month_sa) }}</td>
-                        <td class="fw-bold">{{ emp.total_dys }}</td>
-                        <td class="bg-primary-subtle">{{ "{:,.2f}".format(emp.final_basic) }}</td>
-                        <td class="bg-primary-subtle">{{ "{:,.2f}".format(emp.final_hra) }}</td>
-                        <td class="bg-primary-subtle">{{ "{:,.2f}".format(emp.final_sa) }}</td>
-                        <td class="bg-success-subtle fw-bold">{{ "{:,.2f}".format(emp.final_gross) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.arrier) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.bonus) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.meal_allowance) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.medical_allowance) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.conveyance) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.telephone) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.special_incentive) }}</td>
-                        <td class="bg-success-subtle fw-bold text-success">{{ "{:,.2f}".format(emp.total_earning) }}</td>
-                        <td class="bg-danger-subtle">{{ "{:,.2f}".format(emp.pf) }}</td>
-                        <td class="bg-danger-subtle">{{ "{:,.2f}".format(emp.esic) }}</td>
-                        <td class="bg-danger-subtle">{{ "{:,.2f}".format(emp.advance) }}</td>
-                        <td class="bg-danger-subtle">{{ "{:,.2f}".format(emp.tds) }}</td>
-                        <td class="bg-danger-subtle">{{ "{:,.2f}".format(emp.other_dedn) }}</td>
-                        <td class="bg-danger-subtle">{{ "{:,.2f}".format(emp.super_annuation) }}</td>
-                        <td class="bg-danger-subtle fw-bold text-danger">{{ "{:,.2f}".format(emp.total_dedn) }}</td>
-                        <td class="bg-info-subtle fw-bold fs-6">{{ "{:,.2f}".format(emp.net_salary) }}</td>
+                        <td>{{ emp.month_gross | inr_format }}</td>
+                        <td>{{ emp.month_basic | inr_format }}</td>
+                        <td>{{ emp.month_hra | inr_format }}</td>
+                        <td>{{ emp.month_sa | inr_format }}</td>
+                        <td class="bg-primary-subtle">{{ emp.final_basic | inr_format }}</td>
+                        <td class="bg-primary-subtle">{{ emp.final_hra | inr_format }}</td>
+                        <td class="bg-primary-subtle">{{ emp.final_sa | inr_format }}</td>
+                        <td class="bg-success-subtle fw-bold">{{ emp.final_gross | inr_format }}</td>
+                        <td>{{ emp.arrier | inr_format }}</td>
+                        <td>{{ emp.bonus | inr_format }}</td>
+                        <td>{{ emp.meal_allowance | inr_format }}</td>
+                        <td>{{ emp.medical_allowance | inr_format }}</td>
+                        <td>{{ emp.conveyance | inr_format }}</td>
+                        <td>{{ emp.telephone | inr_format }}</td>
+                        <td>{{ emp.special_incentive | inr_format }}</td>
+                        <td class="bg-success-subtle fw-bold text-success">{{ emp.total_earning | inr_format }}</td>
+                        <td class="bg-danger-subtle">{{ emp.pf | inr_format }}</td>
+                        <td class="bg-danger-subtle">{{ emp.esic | inr_format }}</td>
+                        <td class="bg-danger-subtle">{{ emp.advance | inr_format }}</td>
+                        <td class="bg-danger-subtle">{{ emp.tds | inr_format }}</td>
+                        <td class="bg-danger-subtle">{{ emp.other_dedn | inr_format }}</td>
+                        <td class="bg-danger-subtle">{{ emp.super_annuation | inr_format }}</td>
+                        <td class="bg-danger-subtle fw-bold text-danger">{{ emp.total_dedn | inr_format }}</td>
+                        <td class="bg-info-subtle fw-bold fs-6">{{ emp.net_salary | inr_format }}</td>
                         <td class="small">{{ emp.net_salary_word }}</td>
-                        <td>{{ "{:,.2f}".format(emp.basic_da_pf) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.pf_employer) }}</td>
-                        <td>{{ "{:,.2f}".format(emp.esic_employer) }}</td>
-                        <td class="bg-warning-subtle fw-bold">{{ "{:,.2f}".format(emp.ctc) }}</td>
+                        <td>{{ emp.basic_da_pf | inr_format }}</td>
+                        <td>{{ emp.pf_employer | inr_format }}</td>
+                        <td>{{ emp.esic_employer | inr_format }}</td>
+                        <td class="bg-warning-subtle fw-bold">{{ emp.ctc | inr_format }}</td>
                         <td class="text-end pe-3 bg-white position-sticky end-0">
                             <div class="d-flex gap-2 justify-content-end">
                                 <a href="{{ url_for('payslip_builder', selected_emp_id=emp.emp_id) }}" class="btn btn-sm btn-outline-success" title="Prepare Payslip">

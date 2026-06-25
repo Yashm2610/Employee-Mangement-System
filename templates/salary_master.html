@@ -125,7 +125,6 @@
                         <th class="text-danger">Advance</th>
                         <th class="text-danger fw-bold">Total<br>Dedn</th>
                         <th class="text-dark fw-bold">Net<br>Salary</th>
-                        <th class="text-end pe-3">Payslip</th>
                     </tr>
                 </thead>
                 <tbody id="salaryTableBody">
@@ -198,14 +197,29 @@
                         <td class="salary-cell text-muted" data-col="sa">
                             {{ "{:,.0f}".format(emp.sa) if not emp.not_working else '—' }}
                         </td>
-                        <td class="salary-cell text-muted" data-col="meal">
-                            {{ "{:,.0f}".format(emp.meal) if not emp.not_working else '—' }}
+                        <td class="salary-cell" data-col="meal">
+                            {% if not emp.not_working %}
+                            <input type="number" class="form-control form-control-sm editable-field text-muted fw-semibold"
+                                   data-field="meal" value="{{ '{:.0f}'.format(emp.meal) }}" data-emp-id="{{ emp.emp_id }}" style="min-width: 60px;">
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
-                        <td class="salary-cell text-muted" data-col="medical">
-                            {{ "{:,.0f}".format(emp.medical) if not emp.not_working else '—' }}
+                        <td class="salary-cell" data-col="medical">
+                            {% if not emp.not_working %}
+                            <input type="number" class="form-control form-control-sm editable-field text-muted fw-semibold"
+                                   data-field="medical" value="{{ '{:.0f}'.format(emp.medical) }}" data-emp-id="{{ emp.emp_id }}" style="min-width: 60px;">
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
-                        <td class="salary-cell text-muted" data-col="conveyance">
-                            {{ "{:,.0f}".format(emp.conveyance) if not emp.not_working else '—' }}
+                        <td class="salary-cell" data-col="conveyance">
+                            {% if not emp.not_working %}
+                            <input type="number" class="form-control form-control-sm editable-field text-muted fw-semibold"
+                                   data-field="conveyance" value="{{ '{:.0f}'.format(emp.conveyance) }}" data-emp-id="{{ emp.emp_id }}" style="min-width: 60px;">
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
                         <td class="fw-bold text-success salary-cell" data-col="total_earning" style="background-color: #f8fff9;">
                             {{ "{:,.0f}".format(emp.total_earning) if not emp.not_working else '—' }}
@@ -227,19 +241,6 @@
                         </td>
                         <td class="fw-bold fs-6 salary-cell text-dark" data-col="net_salary" style="background-color: #f0f8ff;">
                             {{ "{:,.0f}".format(emp.net_salary) if not emp.not_working else '—' }}
-                        </td>
-
-                        <!-- Payslip Button -->
-                        <td class="text-end pe-3">
-                            {% if not emp.not_working %}
-                            <a href="{{ url_for('view_payslip', id=emp.id, month_num=month, year_num=year, month=month_name, year=year) }}"
-                               target="_blank"
-                               class="btn btn-sm btn-outline-primary" title="View Payslip for {{ month_name }} {{ year }}">
-                                <i class="bi bi-file-earmark-person"></i> Payslip
-                            </a>
-                            {% else %}
-                            <span class="text-muted small">—</span>
-                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -403,9 +404,6 @@
 
             <div class="modal-footer bg-light border-top-0 pt-0 gap-2">
                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-sm btn-success fw-semibold" id="saveAndPayslipBtn">
-                    <i class="bi bi-floppy me-1"></i> Save &amp; View Payslip
-                </button>
                 <button type="button" class="btn btn-sm btn-primary fw-semibold" id="saveOnlyBtn">
                     <i class="bi bi-check-lg me-1"></i> Save
                 </button>
@@ -502,10 +500,10 @@ function clearAllCheckboxes() {
 document.getElementById('salaryTableBody').addEventListener('input', function (e) {
     if (!e.target.classList.contains('editable-field')) return;
     const row = e.target.closest('tr');
-    recalcRow(row);
+    recalcRow(row, e.target.dataset.field);
 });
 
-function recalcRow(row) {
+function recalcRow(row, changedField = null) {
     const wdInput = row.querySelector('[data-field="working_days"]');
     const pdInput = row.querySelector('[data-field="present_days"]');
     if (!wdInput || !pdInput) return;
@@ -514,18 +512,33 @@ function recalcRow(row) {
     const pd = parseFloat(pdInput.value) || 0;
     const factor = wd > 0 ? pd / wd : 0;
 
+    const mealInput = row.querySelector('[data-field="meal"]');
+    const medInput  = row.querySelector('[data-field="medical"]');
+    const convInput = row.querySelector('[data-field="conveyance"]');
+
+    if (changedField === 'working_days' || changedField === 'present_days' || !changedField) {
+        if (mealInput) mealInput.value = Math.round((parseFloat(row.dataset.baseMeal) || 0) * factor);
+        if (medInput)  medInput.value  = Math.round((parseFloat(row.dataset.baseMed) || 0) * factor);
+        if (convInput) convInput.value = Math.round((parseFloat(row.dataset.baseConv) || 0) * factor);
+    }
+
     const baseEarn = {
         basic:     parseFloat(row.dataset.baseBasic)  || 0,
         hra:       parseFloat(row.dataset.baseHra)    || 0,
         sa:        parseFloat(row.dataset.baseSa)     || 0,
-        meal:      parseFloat(row.dataset.baseMeal)   || 0,
-        medical:   parseFloat(row.dataset.baseMed)    || 0,
-        conveyance:parseFloat(row.dataset.baseConv)   || 0,
     };
-    const fixedDedn = {
+    
+    const inlineEarn = {
+        meal:      mealInput ? parseFloat(mealInput.value) || 0 : ((parseFloat(row.dataset.baseMeal)||0) * factor),
+        medical:   medInput  ? parseFloat(medInput.value)  || 0 : ((parseFloat(row.dataset.baseMed)||0) * factor),
+        conveyance:convInput ? parseFloat(convInput.value) || 0 : ((parseFloat(row.dataset.baseConv)||0) * factor),
+    };
+    const proratedDedn = {
         pf:        parseFloat(row.dataset.basePf)     || 0,
         esic:      parseFloat(row.dataset.baseEsic)   || 0,
         tds:       parseFloat(row.dataset.baseTds)    || 0,
+    };
+    const fixedDedn = {
         advance:   parseFloat(row.dataset.baseAdv)    || 0,
         other:     parseFloat(row.dataset.baseOther)  || 0,
         super_ann: parseFloat(row.dataset.baseSuper)  || 0,
@@ -533,19 +546,20 @@ function recalcRow(row) {
 
     const calc = {};
     for (const [k, v] of Object.entries(baseEarn)) calc[k] = v * factor;
-    calc.total_earning = calc.basic + calc.hra + calc.sa + calc.meal + calc.medical + calc.conveyance;
+    calc.total_earning = calc.basic + calc.hra + calc.sa + inlineEarn.meal + inlineEarn.medical + inlineEarn.conveyance;
+    
+    // Prorate specific deductions
+    for (const [k, v] of Object.entries(proratedDedn)) calc[k] = v * factor;
     
     // Deductions remain fixed
-    calc.pf = fixedDedn.pf;
-    calc.esic = fixedDedn.esic;
-    calc.tds = fixedDedn.tds;
     calc.advance = fixedDedn.advance;
     
     calc.total_dedn    = calc.pf + calc.esic + calc.tds + calc.advance + fixedDedn.other + fixedDedn.super_ann;
     calc.net_salary    = calc.total_earning - calc.total_dedn;
 
-    // Update cells
+    // Update cells (skip ones that are input fields)
     for (const [col, val] of Object.entries(calc)) {
+        if (col === 'meal' || col === 'medical' || col === 'conveyance') continue;
         const cell = row.querySelector(`[data-col="${col}"]`);
         if (cell) cell.textContent = fmt(val);
     }
@@ -560,21 +574,33 @@ document.getElementById('applyBulkBtn').addEventListener('click', async function
     const ids = getSelectedIds();
     if (!ids.length) return;
 
-    const wd = document.getElementById('bulkWorkingDays').value;
-    const pd = document.getElementById('bulkPresentDays').value;
-
-    if (!wd && !pd) {
-        alert('Please enter a value for either Working Days or Present Days.');
-        return;
-    }
+    // Build payload using data from table rows for all selected rows
+    const updates = [];
+    ids.forEach(id => {
+        const row = document.querySelector(`tr[data-emp-id="${id}"]`);
+        if (!row) return;
+        
+        const wdInput = row.querySelector('[data-field="working_days"]');
+        const pdInput = row.querySelector('[data-field="present_days"]');
+        const mealInput = row.querySelector('[data-field="meal"]');
+        const medInput = row.querySelector('[data-field="medical"]');
+        const convInput = row.querySelector('[data-field="conveyance"]');
+        
+        const data = { emp_id: id };
+        if (wdInput) data.working_days = parseInt(wdInput.value) || 0;
+        if (pdInput) data.present_days = parseFloat(pdInput.value) || 0;
+        if (mealInput) data.meal_override = parseFloat(mealInput.value) || 0;
+        if (medInput) data.medical_override = parseFloat(medInput.value) || 0;
+        if (convInput) data.conveyance_override = parseFloat(convInput.value) || 0;
+        
+        updates.push(data);
+    });
 
     const payload = {
-        emp_ids: ids,
         month: CURRENT_MONTH,
         year: CURRENT_YEAR,
+        updates: updates
     };
-    if (wd) payload.working_days = parseInt(wd);
-    if (pd) payload.present_days = parseFloat(pd);
 
     this.disabled = true;
     this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
@@ -595,12 +621,18 @@ document.getElementById('applyBulkBtn').addEventListener('click', async function
                 if (!row) return;
                 const wdInput = row.querySelector('[data-field="working_days"]');
                 const pdInput = row.querySelector('[data-field="present_days"]');
+                const mealInput = row.querySelector('[data-field="meal"]');
+                const medInput = row.querySelector('[data-field="medical"]');
+                const convInput = row.querySelector('[data-field="conveyance"]');
+                
                 if (wdInput && r.working_days != null) wdInput.value = r.working_days;
                 if (pdInput && r.present_days != null) pdInput.value = r.present_days;
+                if (mealInput && r.meal != null) mealInput.value = Math.round(r.meal);
+                if (medInput && r.medical != null) medInput.value = Math.round(r.medical);
+                if (convInput && r.conveyance != null) convInput.value = Math.round(r.conveyance);
 
                 const colMap = {
                     basic: r.basic, hra: r.hra, sa: r.sa,
-                    meal: r.meal, medical: r.medical, conveyance: r.conveyance,
                     total_earning: r.total_earning,
                     pf: r.pf, esic: r.esic, tds: r.tds, advance: r.advance,
                     total_dedn: r.total_dedn, net_salary: r.net_salary
@@ -701,7 +733,8 @@ function recalcModal() {
     const superBase = parseFloat(document.getElementById('modalSuperAnn').value)    || 0;
 
     const gross = (basicBase + hraBase + saBase + mealBase + medBase + convBase) * factor;
-    const dedn  = (pfBase + esicBase + tdsBase + advBase + otherBase + superBase); // Fixed deductions
+    const proratedDedns = (pfBase + esicBase + tdsBase) * factor;
+    const dedn  = proratedDedns + advBase + otherBase + superBase; 
     const net   = gross - dedn;
 
     document.getElementById('modalGrossPreview').textContent = '₹' + fmt(gross);
@@ -764,30 +797,7 @@ document.getElementById('saveOnlyBtn').addEventListener('click', async function 
     }
 });
 
-document.getElementById('saveAndPayslipBtn').addEventListener('click', async function () {
-    this.disabled = true;
-    this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    const result = await doSave();
-    this.disabled = false;
-    this.innerHTML = '<i class="bi bi-floppy me-1"></i> Save & View Payslip';
-    if (result) {
-        bootstrap.Modal.getInstance(document.getElementById('editSalaryModal'))?.hide();
-        // Find employee row id
-        const row = document.querySelector(`tr[data-emp-id="${result.empId}"]`);
-        const rowId = row ? row.dataset.empRowId : null;
-        const monthNames = ['January','February','March','April','May','June','July',
-                            'August','September','October','November','December'];
-        const mName = monthNames[result.month - 1];
-        if (rowId) {
-            const url = `/payslip/${rowId}?month_num=${result.month}&year_num=${result.year}&month=${mName}&year=${result.year}`;
-            window.open(url, '_blank');
-        }
-        showToast('✅ Salary saved! Payslip opening...', 'success');
-        setTimeout(() => location.reload(), 1000);
-    } else {
-        showToast('❌ Save failed. Please try again.', 'danger');
-    }
-});
+// Removed saveAndPayslipBtn listener
 
 // ── Toast Notification ───────────────────────────────────────────────────────
 function showToast(msg, type = 'success') {

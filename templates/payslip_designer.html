@@ -1338,5 +1338,10 @@ async function loadTemplate() {
     }
 }
 
+window.addEventListener('DOMContentLoaded', (event) => {
+    if (document.getElementById('emp-selector').value) {
+        fetchEmployeeData();
+    }
+});
 </script>
 {% endblock %}
