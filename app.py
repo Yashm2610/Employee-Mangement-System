@@ -2547,7 +2547,17 @@ def users():
                     conn.commit()
                     flash("User status updated.", "success")
             
-            cursor.execute("SELECT u.*, e.emp_name FROM users u LEFT JOIN Employee e ON u.employee_id = e.emp_id")
+            cursor.execute("""
+                SELECT u.*, e.emp_name FROM users u 
+                LEFT JOIN Employee e ON u.employee_id = e.emp_id
+                ORDER BY 
+                    CASE 
+                        WHEN u.role = 'Admin' THEN 1 
+                        WHEN u.role = 'HR' THEN 2 
+                        ELSE 3 
+                    END, 
+                    u.user_id ASC
+            """)
             users_list = cursor.fetchall()
             
             import re
